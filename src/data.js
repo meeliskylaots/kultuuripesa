@@ -1,7 +1,9 @@
 export const bookingSettings = {
+  // Piloodi alguses võib see tühjaks jääda. Siis avab broneeringuvorm e-kirja mustandi.
+  // Kui lisad Google Apps Scripti Web App URL-i, saadetakse broneering automaatselt Google Sheeti ja e-postile.
   appsScriptUrl: 'https://script.google.com/macros/s/AKfycbzdFUJ4VLN_jjgX3KZsGDtwpU6cdBuLlRNGyZRodzIOktR2ZF6IuIGGMe_CV4rlnIe5/exec',
-  defaultEmail: 'meeliskylaots@gmail.com',
-  clientCopySubject: 'Sinu ruumi kasutamise soov on vastu võetud',
+  defaultEmail: 'kultuur@elva.ee',
+  clientCopySubject: 'Sinu ruumi kasutamise soov on kätte saadud.',
   priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.'
 }
 
@@ -36,9 +38,10 @@ export const rentalRooms = [
     capacity: 120,
     hourlyRate: 25,
     minimumHours: 2,
-    cleaningFee: 20,
+    cleaningFee: 0,
+    cleaningIncluded: true,
     description: 'Sobib kontserdiks, peoks, koosolekuks ja koolituseks.',
-    included: ['lava', 'toolide-laudade põhipaigutus', 'esmane kasutajajuhend']
+    included: ['lava', 'toolide-laudade põhipaigutus', 'koristus ja ettevalmistus', 'esmane kasutajajuhend']
   },
   {
     id: 'rannu-vaike-saal',
@@ -48,9 +51,10 @@ export const rentalRooms = [
     capacity: 35,
     hourlyRate: 15,
     minimumHours: 1,
-    cleaningFee: 10,
+    cleaningFee: 0,
+    cleaningIncluded: true,
     description: 'Sobib koosolekuks, väiksemaks töötoaks ja nõupidamiseks.',
-    included: ['lauad ja toolid', 'wifi', 'põhikoristus kokkuleppel']
+    included: ['lauad ja toolid', 'wifi', 'koristus ja ettevalmistus']
   },
   {
     id: 'konguta-saal',
@@ -60,9 +64,10 @@ export const rentalRooms = [
     capacity: 80,
     hourlyRate: 22,
     minimumHours: 2,
-    cleaningFee: 20,
+    cleaningFee: 0,
+    cleaningIncluded: true,
     description: 'Paindlik ruum töötubadeks, perepäevadeks, pidudeks ja kogukonnaüritusteks.',
-    included: ['lauad ja toolid', 'projektori kasutamise võimalus', 'esmane kasutajajuhend']
+    included: ['lauad ja toolid', 'projektori kasutamise võimalus', 'koristus ja ettevalmistus', 'esmane kasutajajuhend']
   },
   {
     id: 'konguta-valiala',
@@ -72,9 +77,10 @@ export const rentalRooms = [
     capacity: 300,
     hourlyRate: 30,
     minimumHours: 3,
-    cleaningFee: 30,
+    cleaningFee: 0,
+    cleaningIncluded: true,
     description: 'Sobib suveõhtuks, välisündmuseks ja kogukonna koosviibimiseks.',
-    included: ['väliala kasutus', 'ligipääsu kokkulepe', 'esmane riskide ülevaatus']
+    included: ['väliala kasutus', 'ligipääsu kokkulepe', 'koristus ja ettevalmistus', 'esmane riskide ülevaatus']
   }
 ]
 
@@ -84,7 +90,6 @@ export const rentalServices = [
   { id: 'light-basic', label: 'Valgustuse põhiseadistus', description: 'Lihtne lava- või saalivalgus.', price: 25, pricing: 'fixed' },
   { id: 'tech-hour', label: 'Tehniku kohalolu', description: 'Tehniline tugi sündmuse ajal.', price: 20, pricing: 'hourly' },
   { id: 'coffee', label: 'Kohvilaua ettevalmistus', description: 'Kohv, tee ja lauanõud. Toitlustus eraldi kokkuleppel.', price: 15, pricing: 'fixed' },
-  { id: 'extra-cleaning', label: 'Lisakoristus', description: 'Kui sündmus vajab tavapärasest põhjalikumat koristust.', price: 25, pricing: 'fixed' },
   { id: 'tables-special', label: 'Eripaigutus', description: 'Toolide ja laudade erilahendus enne sündmust.', price: 15, pricing: 'fixed' }
 ]
 

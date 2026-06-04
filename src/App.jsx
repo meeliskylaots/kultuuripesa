@@ -60,8 +60,8 @@ function buildBookingEmail(payload) {
     '',
     'ORIENTEERUV HIND',
     `Ruumi kasutus: ${euro(payload.roomCost)}`,
-    `Koristus / ettevalmistus: ${euro(payload.cleaningFee)}`,
-    `Lisateenused: ${euro(payload.servicesTotal)}`,
+    `Koristus ja ettevalmistus: sisaldub ruumi rendihinnas`,
+    `Valitud lisateenused: ${euro(payload.servicesTotal)}`,
     `Kokku: ${euro(payload.estimatedTotal)}`,
     '',
     'LISAMÄRKUSED',
@@ -91,10 +91,12 @@ function SectionHeader({ eyebrow, title, text }) {
   )
 }
 
-function Field({ label, children, hint }) {
+function Field({ label, children, hint, required = false }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}{required && <span className="ml-1 text-rose-600">*</span>}
+      </span>
       {children}
       {hint && <span className="mt-1 block text-xs leading-5 text-slate-500">{hint}</span>}
     </label>
@@ -167,9 +169,9 @@ function BookingForm({ onBookingSubmit }) {
     .filter((service) => selectedServiceIds.includes(service.id))
     .map((service) => ({ ...service, total: service.pricing === 'hourly' ? service.price * hours : service.price }))
   const roomCost = (selectedRoom?.hourlyRate || 0) * hours
-  const cleaningFee = selectedRoom?.cleaningFee || 0
+  const cleaningFee = 0
   const servicesTotal = selectedServices.reduce((sum, service) => sum + service.total, 0)
-  const estimatedTotal = roomCost + cleaningFee + servicesTotal
+  const estimatedTotal = roomCost + servicesTotal
 
   function update(key, value) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -222,7 +224,7 @@ function BookingForm({ onBookingSubmit }) {
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(payload)
         })
-        setStatus({ type: 'success', text: 'Broneeringusoov saadeti. Koopia läheb kliendi ja rahvamaja e-postile, kui Google Apps Script on seadistatud.' })
+        setStatus({ type: 'success', text: 'Sinu ruumi kasutamise soov on kätte saadud. Koopia läheb kliendi ja rahvamaja e-postile.' })
       } catch (error) {
         setStatus({ type: 'error', text: 'Saatmine ebaõnnestus. Kontrolli Apps Scripti aadressi või kasuta e-kirja mustandit.' })
       }
@@ -249,8 +251,10 @@ function BookingForm({ onBookingSubmit }) {
             <p className="mt-2 text-4xl font-black">{euro(estimatedTotal)}</p>
             <div className="mt-4 space-y-2 text-sm text-white/75">
               <div className="flex justify-between gap-4"><span>Ruum {hours} h × {euro(selectedRoom?.hourlyRate || 0)}</span><span>{euro(roomCost)}</span></div>
-              <div className="flex justify-between gap-4"><span>Koristus / ettevalmistus</span><span>{euro(cleaningFee)}</span></div>
-              <div className="flex justify-between gap-4"><span>Lisateenused</span><span>{euro(servicesTotal)}</span></div>
+              <div className="flex justify-between gap-4 text-white/60"><span>Koristus ja ettevalmistus</span><span>hinnas</span></div>
+              {selectedServices.length > 0 ? selectedServices.map((service) => (
+                <div key={service.id} className="flex justify-between gap-4"><span>{service.label}</span><span>{euro(service.total)}</span></div>
+              )) : <div className="flex justify-between gap-4 text-white/60"><span>Lisateenuseid ei ole valitud</span><span>{euro(0)}</span></div>}
             </div>
             <p className="mt-4 text-xs leading-5 text-white/55">{bookingSettings.priceDisclaimer}</p>
           </div>
@@ -258,19 +262,19 @@ function BookingForm({ onBookingSubmit }) {
 
         <form onSubmit={submitBooking} className="grid gap-4 rounded-[1.5rem] bg-white p-4 text-slate-900 md:p-5">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Ruum">
-              <select className={inputClass} value={form.roomId} onChange={(e) => update('roomId', e.target.value)}>
+            <Field label="Ruum" required>
+              <select required className={inputClass} value={form.roomId} onChange={(e) => update('roomId', e.target.value)}>
                 {rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}
               </select>
             </Field>
-            <Field label="Kuupäev">
-              <input className={inputClass} type="date" value={form.date} onChange={(e) => update('date', e.target.value)} />
+            <Field label="Kuupäev" required>
+              <input required className={inputClass} type="date" value={form.date} onChange={(e) => update('date', e.target.value)} />
             </Field>
-            <Field label="Algusaeg">
-              <input className={inputClass} type="time" value={form.startTime} onChange={(e) => update('startTime', e.target.value)} />
+            <Field label="Algusaeg" required>
+              <input required className={inputClass} type="time" value={form.startTime} onChange={(e) => update('startTime', e.target.value)} />
             </Field>
-            <Field label="Lõpuaeg" hint={`Arvestuslik kestus: ${hours} h. Miinimum: ${selectedRoom.minimumHours} h.`}>
-              <input className={inputClass} type="time" value={form.endTime} onChange={(e) => update('endTime', e.target.value)} />
+            <Field label="Lõpuaeg" required hint={`Arvestuslik kestus: ${hours} h. Miinimum: ${selectedRoom.minimumHours} h.`}>
+              <input required className={inputClass} type="time" value={form.endTime} onChange={(e) => update('endTime', e.target.value)} />
             </Field>
           </div>
 
@@ -282,10 +286,16 @@ function BookingForm({ onBookingSubmit }) {
               <Pill>{euro(selectedRoom.hourlyRate)} / h</Pill>
               <Pill>miinimum {selectedRoom.minimumHours} h</Pill>
             </div>
+            <div className="mt-4 rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Rendi hinna sees</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(selectedRoom.included || []).map((item) => <Pill key={item}>{item}</Pill>)}
+              </div>
+            </div>
           </div>
 
           <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Lisateenused</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Lisateenuste hinnakiri</p>
             <div className="grid gap-2 md:grid-cols-2">
               {rentalServices.map((service) => {
                 const checked = selectedServiceIds.includes(service.id)
@@ -307,20 +317,20 @@ function BookingForm({ onBookingSubmit }) {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Sündmuse liik">
-              <input className={inputClass} value={form.eventType} onChange={(e) => update('eventType', e.target.value)} placeholder="nt sünnipäev, koosolek, koolitus" />
+            <Field label="Sündmuse liik" required>
+              <input required className={inputClass} value={form.eventType} onChange={(e) => update('eventType', e.target.value)} placeholder="nt sünnipäev, koosolek, koolitus" />
             </Field>
             <Field label="Osalejate arv">
               <input className={inputClass} type="number" min="1" value={form.participants} onChange={(e) => update('participants', e.target.value)} placeholder="nt 45" />
             </Field>
-            <Field label="Nimi">
-              <input className={inputClass} value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="Ees- ja perekonnanimi" />
+            <Field label="Nimi" required>
+              <input required className={inputClass} value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="Ees- ja perekonnanimi" />
             </Field>
-            <Field label="E-post">
-              <input className={inputClass} type="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="nimi@example.ee" />
+            <Field label="E-post" required>
+              <input required className={inputClass} type="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="nimi@example.ee" />
             </Field>
-            <Field label="Telefon">
-              <input className={inputClass} value={form.phone} onChange={(e) => update('phone', e.target.value)} placeholder="+372 ..." />
+            <Field label="Telefon" required>
+              <input required className={inputClass} value={form.phone} onChange={(e) => update('phone', e.target.value)} placeholder="+372 ..." />
             </Field>
             <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold ring-1 ring-slate-200">
               <input type="checkbox" checked={form.publicEvent} onChange={(e) => update('publicEvent', e.target.checked)} />
@@ -334,7 +344,7 @@ function BookingForm({ onBookingSubmit }) {
 
           <label className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-950 ring-1 ring-amber-100">
             <input className="mt-1" type="checkbox" checked={form.accepted} onChange={(e) => update('accepted', e.target.checked)} />
-            <span>Mõistan, et tegemist on broneeringupäringuga. Lõplik broneering, hind ja tingimused kinnitatakse rahvamaja töötaja poolt.</span>
+            <span><span className="font-bold text-rose-700">*</span> Mõistan, et tegemist on broneeringupäringuga. Lõplik broneering, hind ja tingimused kinnitatakse rahvamaja töötaja poolt.</span>
           </label>
 
           {status && <p className={`rounded-2xl p-4 text-sm leading-6 ring-1 ${status.type === 'success' ? 'bg-emerald-50 text-emerald-900 ring-emerald-100' : 'bg-rose-50 text-rose-900 ring-rose-100'}`}>{status.text}</p>}
@@ -540,7 +550,7 @@ function AdminView({ selectedRole, setSelectedRole, setView, events, setEvents, 
 
         {tab === 'collectives' && <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]"><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Muuda prooviaega</h2><p className="mt-3 text-sm leading-6 text-slate-600">Kollektiivi juht saab esitada oma prooviaja muudatuse. See liigub kinnitamisele.</p><div className="mt-4 grid gap-3"><Field label="Kollektiiv"><select disabled={!canEditCollectives} className={inputClass} value={activityChange.activityId} onChange={(e) => setActivityChange({ ...activityChange, activityId: e.target.value })}>{activities.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.house}</option>)}</select></Field><Field label="Uus prooviaeg"><input disabled={!canEditCollectives} className={inputClass} value={activityChange.newTime} onChange={(e) => setActivityChange({ ...activityChange, newTime: e.target.value })} placeholder="nt Kolmapäeviti 18.30" /></Field><button disabled={!canEditCollectives} onClick={submitActivityChange} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button></div></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Kollektiivid ja ringid</h2><div className="mt-4 space-y-3">{activities.map((item) => <div key={item.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><h3 className="font-black">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.house} · {item.room}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.time}</p></div>)}</div></div></section>}
 
-        {tab === 'rooms' && <section className="grid gap-6 lg:grid-cols-[1fr_1fr]"><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Ruumid ja hinnad</h2><div className="mt-5 space-y-3">{rentalRooms.map((room) => <div key={room.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><p className="font-black">{room.house} · {room.name}</p><p className="mt-1 text-sm text-slate-600">{euro(room.hourlyRate)} / h · min {room.minimumHours} h · koristus {euro(room.cleaningFee)}</p></div>)}</div></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Tehnilised vajadused</h2>{!canSeeTech && <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-100">Sinu roll ei näe tehnilisi ettevalmistusi.</p>}{canSeeTech && <div className="mt-5 space-y-3">{events.map((event) => <div key={event.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><p className="font-black">{event.title}</p><p className="mt-1 text-sm text-slate-600">{event.tech || 'Tehniline vajadus lisamata'}</p></div>)}</div>}</div></section>}
+        {tab === 'rooms' && <section className="grid gap-6 lg:grid-cols-[1fr_1fr]"><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Ruumid ja hinnad</h2><div className="mt-5 space-y-3">{rentalRooms.map((room) => <div key={room.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><p className="font-black">{room.house} · {room.name}</p><p className="mt-1 text-sm text-slate-600">{euro(room.hourlyRate)} / h · min {room.minimumHours} h · koristus ja ettevalmistus hinnas</p></div>)}</div></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Tehnilised vajadused</h2>{!canSeeTech && <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-100">Sinu roll ei näe tehnilisi ettevalmistusi.</p>}{canSeeTech && <div className="mt-5 space-y-3">{events.map((event) => <div key={event.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><p className="font-black">{event.title}</p><p className="mt-1 text-sm text-slate-600">{event.tech || 'Tehniline vajadus lisamata'}</p></div>)}</div>}</div></section>}
 
         {tab === 'approvals' && <section className="grid gap-6 lg:grid-cols-[1fr_1fr]"><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Muudatused kinnitamiseks</h2><div className="mt-4 space-y-3">{requests.map((request) => <div key={request.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-emerald-700">{request.type}</p><h3 className="mt-1 font-black">{request.title}</h3><p className="mt-1 text-sm text-slate-600">{request.house} · esitas: {request.submittedBy}</p><p className="mt-2 text-sm text-slate-500">Vana: {request.oldValue}</p><p className="text-sm font-semibold text-slate-900">Uus: {request.newValue}</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">{request.status}</span></div>{canApprove && request.status === 'ootel' && <div className="mt-3 flex flex-wrap gap-2"><button onClick={() => approveRequest(request.id)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Kinnita</button></div>}</div>)}</div></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Avaldamata sündmused</h2>{pendingEvents.length === 0 && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900 ring-1 ring-emerald-100">Kõik sündmused on avaldatud või kinnitusi ei ole.</p>}</div></section>}
       </main>
