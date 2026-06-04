@@ -253,7 +253,6 @@ function UsageCalendar({ usages, compact = false }) {
 }
 
 function BookingForm({ events, activities, bookings, onBookingSubmit }) {
-  const [step, setStep] = useState(1)
   const [form, setForm] = useState({
     roomId: rentalRooms[0]?.id || '',
     date: '',
@@ -285,13 +284,6 @@ function BookingForm({ events, activities, bookings, onBookingSubmit }) {
   const servicesTotal = selectedServices.reduce((sum, service) => sum + service.total, 0)
   const estimatedTotal = roomCost + servicesTotal
 
-  const steps = [
-    { id: 1, title: 'Ruum ja aeg' },
-    { id: 2, title: 'Sündmus' },
-    { id: 3, title: 'Teenused ja hind' },
-    { id: 4, title: 'Kontakt ja leping' }
-  ]
-
   function update(key, value) {
     setForm((current) => ({ ...current, [key]: value }))
     setStatus(null)
@@ -301,27 +293,9 @@ function BookingForm({ events, activities, bookings, onBookingSubmit }) {
     setSelectedServiceIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   }
 
-  function canContinue() {
-    if (step === 1) return form.roomId && form.date && form.startTime && form.endTime && !availability.invalid && availability.conflicts.length === 0
-    if (step === 2) return form.eventType
-    if (step === 3) return true
-    return form.name && form.email && form.phone && form.accepted
-  }
-
-  function nextStep() {
-    if (!canContinue()) {
-      if (step === 1) setStatus({ type: 'error', text: availability.conflicts.length ? 'Valitud ajal on ruum juba kasutuses. Palun vali teine aeg.' : 'Palun vali ruum, kuupäev ning korrektne algus- ja lõpuaeg.' })
-      if (step === 2) setStatus({ type: 'error', text: 'Palun lisa sündmuse liik.' })
-      if (step === 4) setStatus({ type: 'error', text: 'Palun täida kontaktandmed ja kinnita tingimustega tutvumine.' })
-      return
-    }
-    setStatus(null)
-    setStep((current) => Math.min(current + 1, steps.length))
-  }
-
   async function submitBooking(e) {
     e.preventDefault()
-    if (!canContinue()) {
+    if (!form.date || !form.startTime || !form.endTime || !form.eventType || !form.name || !form.email || !form.phone || !form.accepted) {
       setStatus({ type: 'error', text: 'Palun täida kohustuslikud väljad ja kinnita tingimustega tutvumine.' })
       return
     }
@@ -383,135 +357,91 @@ function BookingForm({ events, activities, bookings, onBookingSubmit }) {
   }
 
   return (
-    <section id="broneeri" className="mx-auto max-w-7xl px-4 pb-20 md:px-8">
-      <div className="rounded-[2rem] bg-slate-950 p-5 text-white md:p-8">
-        <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-          <div>
-            <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-emerald-300">Ruumide rent</p>
-            <h2 className="text-3xl font-black md:text-4xl">Broneeri samm-sammult</h2>
-            <p className="mt-4 leading-7 text-white/70">Telefonis näed korraga ainult ühte otsust. Alusta ruumist ja ajast, seejärel lisa sündmuse, hinna ja lepingu info.</p>
-            <div className="mt-6 rounded-[1.4rem] bg-white/10 p-5 ring-1 ring-white/15">
-              <p className="text-sm font-bold uppercase tracking-wide text-white/50">Orienteeruv hind</p>
-              <p className="mt-2 text-4xl font-black">{euro(estimatedTotal)}</p>
-              <div className="mt-4 space-y-2 text-sm text-white/75">
-                <div className="flex justify-between gap-4"><span>Ruum {hours} h × {euro(selectedRoom?.hourlyRate || 0)}</span><span>{euro(roomCost)}</span></div>
-                <div className="flex justify-between gap-4 text-white/60"><span>Koristus ja ettevalmistus</span><span>hinnas</span></div>
-                {selectedServices.length > 0 ? selectedServices.map((service) => <div key={service.id} className="flex justify-between gap-4"><span>{service.label}</span><span>{euro(service.total)}</span></div>) : <div className="flex justify-between gap-4 text-white/60"><span>Lisateenuseid ei ole valitud</span><span>{euro(0)}</span></div>}
+    <section id="broneeri" className="mx-auto max-w-7xl px-4 pb-14 md:px-8">
+      <div className="grid gap-6 rounded-[2rem] bg-slate-950 p-5 text-white md:grid-cols-[0.9fr_1.1fr] md:p-8">
+        <div>
+          <p className="mb-2 text-sm font-bold uppercase tracking-[0.18em] text-emerald-300">Ruumide rent</p>
+          <h2 className="text-3xl font-black md:text-4xl">Saada ruumi kasutamise soov</h2>
+          <p className="mt-4 leading-7 text-white/70">Vali ruum ja aeg. Süsteem kontrollib samast Kultuuripesa kalendrist, kas ruum on valitud ajal esialgu vaba.</p>
+          <div className="mt-6 rounded-[1.4rem] bg-white/10 p-5 ring-1 ring-white/15">
+            <p className="text-sm font-bold uppercase tracking-wide text-white/50">Orienteeruv hind</p>
+            <p className="mt-2 text-4xl font-black">{euro(estimatedTotal)}</p>
+            <div className="mt-4 space-y-2 text-sm text-white/75">
+              <div className="flex justify-between gap-4"><span>Ruum {hours} h × {euro(selectedRoom?.hourlyRate || 0)}</span><span>{euro(roomCost)}</span></div>
+              <div className="flex justify-between gap-4 text-white/60"><span>Koristus ja ettevalmistus</span><span>hinnas</span></div>
+              {selectedServices.length > 0 ? selectedServices.map((service) => <div key={service.id} className="flex justify-between gap-4"><span>{service.label}</span><span>{euro(service.total)}</span></div>) : <div className="flex justify-between gap-4 text-white/60"><span>Lisateenuseid ei ole valitud</span><span>{euro(0)}</span></div>}
+            </div>
+            <p className="mt-4 text-xs leading-5 text-white/55">{bookingSettings.priceDisclaimer}</p>
+          </div>
+        </div>
+
+        <form onSubmit={submitBooking} className="grid gap-4 rounded-[1.5rem] bg-white p-4 text-slate-900 md:p-5">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Ruum" required><select required className={inputClass} value={form.roomId} onChange={(e) => update('roomId', e.target.value)}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field>
+            <Field label="Kuupäev" required><input required className={inputClass} type="date" value={form.date} onChange={(e) => update('date', e.target.value)} /></Field>
+            <Field label="Algusaeg" required><input required className={inputClass} type="time" value={form.startTime} onChange={(e) => update('startTime', e.target.value)} /></Field>
+            <Field label="Lõpuaeg" required hint={`Arvestuslik kestus: ${hours} h. Miinimum: ${selectedRoom.minimumHours} h.`}><input required className={inputClass} type="time" value={form.endTime} onChange={(e) => update('endTime', e.target.value)} /></Field>
+          </div>
+
+          {form.date && (
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <h3 className="font-black">{selectedRoom.house} · {selectedRoom.name}</h3>
+              <p className="mt-1 text-sm text-slate-600">Selle päeva ruumikasutus avalikus kalendris:</p>
+              <div className="mt-3 space-y-2">
+                {dayUsages.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-emerald-900 ring-1 ring-emerald-100">Sellel kuupäeval ei ole ruumi kasutust kalendris.</p>}
+                {dayUsages.map((item) => <p key={item.id} className="rounded-xl bg-white p-3 text-sm text-slate-700 ring-1 ring-slate-200">{item.startTime}–{item.endTime} · {item.publicTitle}</p>)}
               </div>
-              <p className="mt-4 text-xs leading-5 text-white/55">{bookingSettings.priceDisclaimer}</p>
+              {availability.ready && !availability.invalid && (
+                <div className={`mt-3 rounded-xl p-3 text-sm font-semibold ring-1 ${availability.conflicts.length ? 'bg-rose-50 text-rose-900 ring-rose-100' : 'bg-emerald-50 text-emerald-900 ring-emerald-100'}`}>
+                  {availability.conflicts.length ? 'Valitud ajal on ruum koos puhvriga juba kasutuses. Palun vali teine aeg.' : 'Valitud aeg on ruumikalendri põhjal esialgu vaba.'}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <p className="font-black">Rendi hinna sees</p>
+            <div className="mt-2 flex flex-wrap gap-2">{(selectedRoom.included || []).map((item) => <Pill key={item}>{item}</Pill>)}</div>
+            {(selectedRoom.agreement || []).length > 0 && <><p className="mt-4 text-sm font-black text-amber-800">Eraldi kokkuleppel</p><div className="mt-2 flex flex-wrap gap-2">{selectedRoom.agreement.map((item) => <span key={item} className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100">{item}</span>)}</div></>}
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Lisateenuste hinnakiri</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {rentalServices.map((service) => {
+                const checked = selectedServiceIds.includes(service.id)
+                const total = service.pricing === 'hourly' ? service.price * hours : service.price
+                return <label key={service.id} className={`cursor-pointer rounded-2xl p-3 ring-1 transition ${checked ? 'bg-emerald-50 ring-emerald-200' : 'bg-slate-50 ring-slate-200 hover:bg-slate-100'}`}><div className="flex items-start gap-3"><input className="mt-1" type="checkbox" checked={checked} onChange={() => toggleService(service.id)} /><div><p className="text-sm font-black">{service.label}</p><p className="mt-1 text-xs leading-5 text-slate-600">{service.description}</p><p className="mt-2 text-xs font-bold text-emerald-800">{service.pricing === 'hourly' ? `${euro(service.price)} / h` : euro(service.price)} · kokku {euro(total)}</p></div></div></label>
+              })}
             </div>
           </div>
 
-          <form onSubmit={submitBooking} className="rounded-[1.5rem] bg-white p-4 text-slate-900 md:p-5">
-            <div className="mb-5 flex gap-2 overflow-x-auto pb-2">
-              {steps.map((item) => <button key={item.id} type="button" onClick={() => setStep(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black ring-1 ${step === item.id ? 'bg-slate-950 text-white ring-slate-950' : 'bg-slate-50 text-slate-600 ring-slate-200'}`}>{item.id}. {item.title}</button>)}
-            </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Sündmuse liik" required><input required className={inputClass} value={form.eventType} onChange={(e) => update('eventType', e.target.value)} placeholder="nt sünnipäev, koosolek, koolitus" /></Field>
+            <Field label="Osalejate arv"><input className={inputClass} type="number" min="1" value={form.participants} onChange={(e) => update('participants', e.target.value)} placeholder="nt 45" /></Field>
+            <Field label="Nimi" required><input required className={inputClass} value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="Ees- ja perekonnanimi" /></Field>
+            <Field label="E-post" required><input required className={inputClass} type="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="nimi@example.ee" /></Field>
+            <Field label="Telefon" required><input required className={inputClass} value={form.phone} onChange={(e) => update('phone', e.target.value)} placeholder="+372 ..." /></Field>
+            <Field label="Allkirjastamine" required><select required className={inputClass} value={form.signingPreference} onChange={(e) => update('signingPreference', e.target.value)}><option value="kohapeal">Allkirjastan lepingu kohapeal rahvamajas</option><option value="digitaalne">Soovin lepingu allkirjastada digitaalselt</option></select></Field>
+          </div>
 
-            {step === 1 && (
-              <div className="grid gap-4">
-                <h3 className="text-xl font-black">1. Vali ruum ja aeg</h3>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Ruum" required><select required className={inputClass} value={form.roomId} onChange={(e) => update('roomId', e.target.value)}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field>
-                  <Field label="Kuupäev" required><input required className={inputClass} type="date" value={form.date} onChange={(e) => update('date', e.target.value)} /></Field>
-                  <Field label="Algusaeg" required><input required className={inputClass} type="time" value={form.startTime} onChange={(e) => update('startTime', e.target.value)} /></Field>
-                  <Field label="Lõpuaeg" required hint={`Arvestuslik kestus: ${hours} h. Miinimum: ${selectedRoom.minimumHours} h.`}><input required className={inputClass} type="time" value={form.endTime} onChange={(e) => update('endTime', e.target.value)} /></Field>
-                </div>
-                {form.date && (
-                  <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                    <h4 className="font-black">{selectedRoom.house} · {selectedRoom.name}</h4>
-                    <p className="mt-1 text-sm text-slate-600">Selle päeva kasutus:</p>
-                    <div className="mt-3 space-y-2">
-                      {dayUsages.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-emerald-900 ring-1 ring-emerald-100">Sellel kuupäeval ei ole ruumi kasutust kalendris.</p>}
-                      {dayUsages.map((item) => <p key={item.id} className="rounded-xl bg-white p-3 text-sm text-slate-700 ring-1 ring-slate-200">{item.startTime}–{item.endTime} · {item.publicTitle}</p>)}
-                    </div>
-                    {availability.ready && !availability.invalid && availability.conflicts.length === 0 && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri põhjal esialgu vaba.</p>}
-                    {availability.ready && availability.conflicts.length > 0 && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-900 ring-1 ring-rose-100">Valitud ajal on ruum kasutuses. Palun vali teine aeg.</p>}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {step === 2 && (
-              <div className="grid gap-4">
-                <h3 className="text-xl font-black">2. Sündmuse info</h3>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Sündmuse liik" required><input required className={inputClass} value={form.eventType} onChange={(e) => update('eventType', e.target.value)} placeholder="nt sünnipäev, koosolek, koolitus" /></Field>
-                  <Field label="Osalejate arv"><input className={inputClass} type="number" min="1" value={form.participants} onChange={(e) => update('participants', e.target.value)} placeholder="nt 45" /></Field>
-                </div>
-                <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold ring-1 ring-slate-200"><input type="checkbox" checked={form.publicEvent} onChange={(e) => update('publicEvent', e.target.checked)} />Tegemist on avaliku sündmusega</label>
-                <Field label="Lisainfo"><textarea className={`${inputClass} min-h-[120px]`} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Kirjelda lisasoove, toitlustuse vajadust, tehnilisi vajadusi või muid olulisi asjaolusid." /></Field>
-              </div>
-            )}
-
-            {step === 3 && (
-              <div className="grid gap-4">
-                <h3 className="text-xl font-black">3. Teenused ja hind</h3>
-                <div className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
-                  <p className="font-black">Rendi hinna sees</p>
-                  <div className="mt-2 flex flex-wrap gap-2">{(selectedRoom.included || []).map((item) => <Pill key={item}>{item}</Pill>)}</div>
-                </div>
-                {(selectedRoom.agreement || []).length > 0 && <div className="rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-100"><p className="font-black">Eraldi kokkuleppel</p><div className="mt-2 flex flex-wrap gap-2">{selectedRoom.agreement.map((item) => <Pill key={item}>{item}</Pill>)}</div></div>}
-                <div className="grid gap-2">
-                  {rentalServices.map((service) => {
-                    const active = selectedServiceIds.includes(service.id)
-                    return <button key={service.id} type="button" onClick={() => toggleService(service.id)} className={`rounded-2xl p-4 text-left ring-1 ${active ? 'bg-emerald-50 ring-emerald-200' : 'bg-slate-50 ring-slate-200'}`}><div className="flex items-start justify-between gap-3"><div><p className="font-black">{service.label}</p><p className="mt-1 text-sm text-slate-600">{service.description || 'Lisateenus'}</p></div><p className="shrink-0 text-sm font-black text-slate-950">{service.pricing === 'hourly' ? `${euro(service.price)} / h` : euro(service.price)}</p></div></button>
-                  })}
-                </div>
-              </div>
-            )}
-
-            {step === 4 && (
-              <div className="grid gap-4">
-                <h3 className="text-xl font-black">4. Kontakt, leping ja saatmine</h3>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Nimi" required><input required className={inputClass} value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="Ees- ja perekonnanimi" /></Field>
-                  <Field label="E-post" required><input required className={inputClass} type="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="nimi@example.ee" /></Field>
-                  <Field label="Telefon" required><input required className={inputClass} type="tel" value={form.phone} onChange={(e) => update('phone', e.target.value)} placeholder="+372 ..." /></Field>
-                  <Field label="Allkirjastamine" required><select required className={inputClass} value={form.signingPreference} onChange={(e) => update('signingPreference', e.target.value)}><option value="kohapeal">Allkirjastan lepingu kohapeal rahvamajas</option><option value="digitaalne">Soovin lepingu allkirjastada digitaalselt</option></select></Field>
-                </div>
-                <details className="rounded-2xl bg-slate-50 p-4 text-sm leading-6 ring-1 ring-slate-200"><summary className="cursor-pointer font-black">Ruumide kasutamise tingimused</summary><p className="mt-3 text-slate-600">Broneering jõustub pärast rahvamaja kinnitust. Hind on orienteeruv ning lõplikud tingimused kinnitab rahvamaja töötaja.</p></details>
-                <label className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-950 ring-1 ring-amber-100"><input className="mt-1" type="checkbox" checked={form.accepted} onChange={(e) => update('accepted', e.target.checked)} /><span><span className="font-bold text-rose-700">*</span> Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega.</span></label>
-              </div>
-            )}
-
-            {status && <p className={`mt-4 rounded-2xl p-4 text-sm leading-6 ring-1 ${status.type === 'success' ? 'bg-emerald-50 text-emerald-900 ring-emerald-100' : 'bg-rose-50 text-rose-900 ring-rose-100'}`}>{status.text}</p>}
-
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-              <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-200" disabled={step === 1}>Tagasi</button>
-              {step < steps.length ? <button type="button" onClick={nextStep} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Jätka</button> : <button type="submit" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Saada broneeringusoov</button>}
-            </div>
-          </form>
-        </div>
+          <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold ring-1 ring-slate-200"><input type="checkbox" checked={form.publicEvent} onChange={(e) => update('publicEvent', e.target.checked)} />Tegemist on avaliku sündmusega</label>
+          <Field label="Lisainfo"><textarea className={`${inputClass} min-h-[96px]`} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Kirjelda lisasoove, toitlustuse vajadust, tehnilisi vajadusi või muid olulisi asjaolusid." /></Field>
+          <label className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-950 ring-1 ring-amber-100"><input className="mt-1" type="checkbox" checked={form.accepted} onChange={(e) => update('accepted', e.target.checked)} /><span><span className="font-bold text-rose-700">*</span> Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega.</span></label>
+          {status && <p className={`rounded-2xl p-4 text-sm leading-6 ring-1 ${status.type === 'success' ? 'bg-emerald-50 text-emerald-900 ring-emerald-100' : 'bg-rose-50 text-rose-900 ring-rose-100'}`}>{status.text}</p>}
+          <button type="submit" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Saada broneeringusoov</button>
+        </form>
       </div>
     </section>
-  )
-}
-
-function TaskCard({ title, text, href, icon }) {
-  return (
-    <a href={href} className="rounded-[1.4rem] bg-white p-5 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-xl ring-1 ring-emerald-100">{icon}</div>
-      <h3 className="text-lg font-black text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
-      <p className="mt-4 text-sm font-bold text-emerald-700">Ava →</p>
-    </a>
   )
 }
 
 function PublicView({ events, activities, bookings, setView, onBookingSubmit }) {
   const [filter, setFilter] = useState('Kõik')
   const [query, setQuery] = useState('')
-  const [usageRoomId, setUsageRoomId] = useState(rentalRooms[0]?.id || '')
-  const [usageDate, setUsageDate] = useState('')
   const usages = getRoomUsages(events, activities, bookings)
   const publicEvents = events.filter((event) => event.status === 'published' && event.public && event.displayMode !== 'neutral')
   const publicActivities = activities.filter((activity) => activity.status === 'published')
-  const selectedUsageRoom = rentalRooms.find((room) => room.id === usageRoomId) || rentalRooms[0]
-  const visibleUsageItems = usages.filter((item) => {
-    const roomOk = !usageRoomId || item.roomId === usageRoomId
-    const dateOk = !usageDate || item.dateISO === usageDate
-    return roomOk && dateOk
-  })
   const filteredEvents = useMemo(() => publicEvents.filter((event) => {
     const text = `${event.title} ${event.publicTitle} ${event.house} ${event.audience} ${event.category} ${event.price} ${event.description}`.toLowerCase()
     const queryOk = text.includes(query.toLowerCase())
@@ -520,78 +450,37 @@ function PublicView({ events, activities, bookings, setView, onBookingSubmit }) 
   }), [publicEvents, query, filter])
 
   return (
-    <div className="min-h-screen bg-[#f8faf7] pb-20 text-slate-900 md:pb-0">
+    <div className="min-h-screen bg-[#f8faf7] text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
           <a href="#avaleht" className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-700 text-lg font-black text-white">RK</div><div><p className="text-base font-black leading-tight">Rannu & Konguta</p><p className="text-xs font-semibold text-slate-500">rahvamajad</p></div></a>
-          <nav className="hidden items-center gap-6 text-sm font-bold text-slate-700 md:flex"><a href="#sundmused" className="hover:text-emerald-700">Sündmused</a><a href="#vabad-ajad" className="hover:text-emerald-700">Vabad ajad</a><a href="#broneeri" className="hover:text-emerald-700">Ruumide rent</a><a href="#ringid" className="hover:text-emerald-700">Ringid</a><a href="#kontakt" className="hover:text-emerald-700">Kontakt</a></nav>
+          <nav className="hidden items-center gap-6 text-sm font-bold text-slate-700 md:flex"><a href="#sundmused" className="hover:text-emerald-700">Sündmused</a><a href="#kasutus" className="hover:text-emerald-700">Kasutuskalender</a><a href="#ringid" className="hover:text-emerald-700">Ringid</a><a href="#broneeri" className="hover:text-emerald-700">Ruumide rent</a><a href="#kontakt" className="hover:text-emerald-700">Kontakt</a></nav>
           <div className="hidden gap-2 md:flex"><button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">Töötajale</button><a href="#broneeri" className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</a></div>
         </div>
       </header>
 
       <main id="avaleht">
-        <section className="mx-auto grid max-w-7xl gap-8 px-4 py-8 md:grid-cols-[1.05fr_0.95fr] md:px-8 md:py-16">
-          <div className="flex flex-col justify-center">
-            <p className="mb-4 inline-flex w-fit rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta ühine kultuuripesa</p>
-            <h1 className="max-w-4xl text-3xl font-black tracking-tight text-slate-950 md:text-6xl">Mida soovid teha?</h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg md:leading-8">Leia sündmus, kontrolli ruumi vaba aega või saada broneeringusoov. Avalik kalender näitab ka seda, millal rahvamaja on kasutuses.</p>
-            <div className="mt-7 grid gap-3 sm:grid-cols-3">
-              <a href="#sundmused" className="rounded-2xl bg-emerald-700 px-5 py-4 text-center text-base font-extrabold text-white shadow-sm hover:bg-emerald-800">Vaata sündmusi</a>
-              <a href="#vabad-ajad" className="rounded-2xl bg-slate-950 px-5 py-4 text-center text-base font-extrabold text-white shadow-sm hover:bg-slate-800">Kontrolli vaba aega</a>
-              <a href="#broneeri" className="rounded-2xl bg-white px-5 py-4 text-center text-base font-extrabold text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">Broneeri ruum</a>
-            </div>
-          </div>
-          <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200 md:p-5">
-            <div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-100 via-white to-amber-50 p-5"><h2 className="text-lg font-black">Kiirvaade</h2><div className="mt-5 space-y-3"><a href="#sundmused" className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-white hover:bg-slate-50"><div><p className="font-extrabold">Avalikud sündmused</p><p className="text-sm text-slate-500">{publicEvents.length} sündmust nähtaval</p></div><span>→</span></a><a href="#vabad-ajad" className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-white hover:bg-slate-50"><div><p className="font-extrabold">Ruumide kasutus</p><p className="text-sm text-slate-500">{usages.length} ruumikasutust kalendris</p></div><span>→</span></a><a href="#broneeri" className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-white hover:bg-slate-50"><div><p className="font-extrabold">Ruumide rent</p><p className="text-sm text-slate-500">hind ja vaba aja esmane kontroll</p></div><span>→</span></a></div></div>
-          </div>
+        <section className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-[1.1fr_0.9fr] md:px-8 md:py-16">
+          <div className="flex flex-col justify-center"><p className="mb-4 inline-flex w-fit rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast</p><h1 className="max-w-4xl text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Leia sündmused, ruumide kasutus ja vabad ajad kiiresti.</h1><p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Avalik kalender näitab nii avalikke sündmusi kui ka seda, millal rahvamaja või ruum on broneeritud või kasutuses.</p><div className="mt-7 flex flex-wrap gap-3"><a href="#kasutus" className="rounded-2xl bg-emerald-700 px-5 py-3 text-base font-extrabold text-white shadow-sm hover:bg-emerald-800">Vaata kasutuskalendrit</a><a href="#broneeri" className="rounded-2xl bg-white px-5 py-3 text-base font-extrabold text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">Saada broneeringusoov</a></div></div>
+          <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200 md:p-5"><div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-100 via-white to-amber-50 p-5"><h2 className="text-lg font-black">Täna oluline</h2><div className="mt-5 space-y-3"><a href="#sundmused" className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-white hover:bg-slate-50"><div><p className="font-extrabold">Avalikud sündmused</p><p className="text-sm text-slate-500">{publicEvents.length} sündmust nähtaval</p></div><span>→</span></a><a href="#kasutus" className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-white hover:bg-slate-50"><div><p className="font-extrabold">Rahvamajade kasutus</p><p className="text-sm text-slate-500">{usages.length} ruumikasutust kalendris</p></div><span>→</span></a><a href="#broneeri" className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-white hover:bg-slate-50"><div><p className="font-extrabold">Ruumide rent</p><p className="text-sm text-slate-500">hind ja saadavuse esmane kontroll</p></div><span>→</span></a></div></div></div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-4 pb-6 md:px-8">
-          <div className="grid gap-4 md:grid-cols-3">
-            <TaskCard icon="🎟" title="Tulen sündmusele" text="Vaata lähimaid avalikke sündmusi ja filtreeri Rannu või Konguta järgi." href="#sundmused" />
-            <TaskCard icon="🏠" title="Soovin ruumi kasutada" text="Kontrolli ruumi kasutust, vali aeg ja saada broneeringusoov." href="#vabad-ajad" />
-            <TaskCard icon="🔐" title="Olen juhendaja või töötaja" text="Logi sisse, lisa sündmus või esita prooviaja muudatus kinnitamiseks." href="#" />
-          </div>
-        </section>
-
-        <section id="sundmused" className="mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-12">
+        <section id="sundmused" className="mx-auto max-w-7xl px-4 py-12 md:px-8">
           <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end"><SectionHeader eyebrow="Sündmused" title="Mis lähiajal toimub?" text="Siin on avalikud sündmused, mille detaile rahvamaja soovib tutvustada." /><div className="w-full rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 md:max-w-sm"><label className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Otsi</label><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Näiteks peredele, kontsert, Rannu..." className="w-full bg-transparent text-sm outline-none" /></div></div>
-          <div className="mb-6 flex gap-2 overflow-x-auto pb-2">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${filter === item ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'}`}>{item}</button>)}</div>
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{filteredEvents.slice(0, 6).map((event) => <EventCard key={event.id} event={event} />)}</div>
+          <div className="mb-6 flex gap-2 overflow-x-auto pb-2">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${filter === item ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'}`}>{item}</button>)}</div>
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{filteredEvents.map((event) => <EventCard key={event.id} event={event} />)}</div>
         </section>
 
-        <section id="vabad-ajad" className="bg-white py-10 ring-1 ring-slate-200 md:py-12">
-          <div className="mx-auto max-w-7xl px-4 md:px-8">
-            <SectionHeader eyebrow="Ruumide kasutus" title="Kontrolli ruumi vaba aega" text="Vali ruum ja kuupäev. Avalik vaade näitab kõiki kasutusi vähemalt hõivatuse infona, kuid eraürituste detaile ei kuvata." />
-            <div className="mb-5 grid gap-3 rounded-[1.5rem] bg-[#f8faf7] p-4 ring-1 ring-slate-200 md:grid-cols-[1fr_1fr_auto]">
-              <Field label="Ruum"><select className={inputClass} value={usageRoomId} onChange={(e) => setUsageRoomId(e.target.value)}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field>
-              <Field label="Kuupäev"><input className={inputClass} type="date" value={usageDate} onChange={(e) => setUsageDate(e.target.value)} /></Field>
-              <div className="flex items-end"><a href="#broneeri" className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-center text-sm font-bold text-white hover:bg-emerald-800">Broneeri</a></div>
-            </div>
-            <div className="mb-4 rounded-2xl bg-emerald-50 p-4 text-sm leading-6 text-emerald-950 ring-1 ring-emerald-100"><b>{selectedUsageRoom?.house} · {selectedUsageRoom?.name}</b>{usageDate ? ` · ${usageDate}` : ''}. Kui tegevuse detailid ei ole avalikud, kuvatakse neutraalne tekst nagu “Ruum broneeritud” või “Rahvamaja kasutuses”.</div>
-            <UsageCalendar usages={visibleUsageItems} compact />
-          </div>
+        <section id="kasutus" className="bg-white py-12 ring-1 ring-slate-200">
+          <div className="mx-auto max-w-7xl px-4 md:px-8"><SectionHeader eyebrow="Kasutuskalender" title="Millal rahvamaja on kasutuses?" text="Kõik ruumi hõivavad tegevused on avalikus vaates nähtavad vähemalt kasutuse infona. Eraürituste ja sisemiste tegevuste detaile ei kuvata." /><UsageCalendar usages={usages} /></div>
         </section>
 
+        <section id="ringid" className="mx-auto max-w-7xl px-4 py-12 md:px-8"><SectionHeader eyebrow="Ringid ja tegevused" title="Leia endale sobiv tegevus" text="Kollektiivide juhid saavad prooviaegu muuta sisselogitud vaates, juhataja või administraator kinnitab muudatused." /><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{publicActivities.map((item) => <div key={item.id} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-2 text-sm text-slate-600">{item.house} · {item.room}</p><p className="mt-3 text-sm font-semibold text-slate-950">Kellele: {item.audience}</p><p className="mt-1 text-sm text-slate-600">{item.time}</p></div>)}</div></section>
         <BookingForm events={events} activities={activities} bookings={bookings} onBookingSubmit={onBookingSubmit} />
-
-        <section id="ringid" className="mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-12"><SectionHeader eyebrow="Ringid ja tegevused" title="Leia endale sobiv tegevus" text="Kollektiivide juhid saavad prooviaegu muuta sisselogitud vaates, juhataja või administraator kinnitab muudatused." /><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{publicActivities.map((item) => <div key={item.id} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-2 text-sm text-slate-600">{item.house} · {item.room}</p><p className="mt-3 text-sm font-semibold text-slate-950">Kellele: {item.audience}</p><p className="mt-1 text-sm text-slate-600">{item.time}</p></div>)}</div></section>
-
-        <section id="majad" className="bg-white py-10 ring-1 ring-slate-200 md:py-12"><div className="mx-auto max-w-7xl px-4 md:px-8"><SectionHeader eyebrow="Rahvamajad" title="Kaks maja, kaks kohalikku nägu" text="Rannu ja Konguta rahvamajad töötavad ühise avaliku vaatega, aga mõlemal majal on oma tugevused ja kogukondlik roll." /><div className="grid gap-5 md:grid-cols-2">{houses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-[#f8faf7] p-6 ring-1 ring-slate-200"><div className="mb-5 h-36 rounded-[1.3rem] bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 md:h-44" /><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-semibold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map((tag) => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></div></section>
-
-        <section id="kontakt" className="mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-12"><SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta või helista, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." /><div className="grid gap-5 md:grid-cols-3"><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">Üldkontakt</h3><p className="mt-3 text-slate-600">{bookingSettings.defaultEmail}</p><a href={`mailto:${bookingSettings.defaultEmail}`} className="mt-5 inline-flex rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">Kirjuta</a></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">Rannu rahvamaja</h3><p className="mt-3 text-slate-600">Rannu alevik</p></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">Konguta rahvamaja</h3><p className="mt-3 text-slate-600">Annikoru küla</p></div></div></section>
+        <section id="majad" className="bg-white py-12 ring-1 ring-slate-200"><div className="mx-auto max-w-7xl px-4 md:px-8"><SectionHeader eyebrow="Rahvamajad" title="Kaks maja, kaks kohalikku nägu" text="Rannu ja Konguta rahvamajad töötavad ühise avaliku vaatega, aga mõlemal majal on oma tugevused ja kogukondlik roll." /><div className="grid gap-5 md:grid-cols-2">{houses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-[#f8faf7] p-6 ring-1 ring-slate-200"><div className="mb-5 h-44 rounded-[1.3rem] bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50" /><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-semibold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map((tag) => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></div></section>
+        <section id="kontakt" className="mx-auto max-w-7xl px-4 py-12 md:px-8"><SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta või helista, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." /><div className="grid gap-5 md:grid-cols-3"><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">Üldkontakt</h3><p className="mt-3 text-slate-600">{bookingSettings.defaultEmail}</p></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">Rannu rahvamaja</h3><p className="mt-3 text-slate-600">Rannu alevik</p></div><div className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">Konguta rahvamaja</h3><p className="mt-3 text-slate-600">Annikoru küla</p></div></div></section>
       </main>
-
-      <footer className="border-t border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-600 md:flex-row md:items-center md:justify-between md:px-8"><p className="font-semibold">Rannu & Konguta rahvamajad</p><p>Sündmused · Vabad ajad · Ringid · Ruumide rent · <button onClick={() => setView('login')} className="font-bold text-emerald-700">Töötajale</button></p></div></footer>
-
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white p-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] md:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-4 gap-2 text-xs font-black">
-          <a href="#sundmused" className="rounded-2xl bg-slate-950 px-2 py-3 text-center text-white">Sündmused</a>
-          <a href="#vabad-ajad" className="rounded-2xl bg-emerald-700 px-2 py-3 text-center text-white">Ruumid</a>
-          <a href="#ringid" className="rounded-2xl bg-white px-2 py-3 text-center text-slate-900 ring-1 ring-slate-200">Ringid</a>
-          <button onClick={() => setView('login')} className="rounded-2xl bg-white px-2 py-3 text-center text-slate-900 ring-1 ring-slate-200">Töötajale</button>
-        </div>
-      </div>
+      <footer className="border-t border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-600 md:flex-row md:items-center md:justify-between md:px-8"><p className="font-semibold">Rannu & Konguta rahvamajad</p><p>Sündmused · Kasutuskalender · Ringid · Ruumide rent · <button onClick={() => setView('login')} className="font-bold text-emerald-700">Töötajale</button></p></div></footer>
     </div>
   )
 }
