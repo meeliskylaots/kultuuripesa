@@ -1,33 +1,43 @@
 /**
  * Rannu ja Konguta rahvamajade ruumibroneeringu vastuvõtja.
  *
- * Kasutamine:
- * 1. Loo Google Sheet ja pane esimeseks leheks "Broneeringud".
- * 2. Ava Extensions → Apps Script.
- * 3. Kleebi see kood Apps Scripti.
- * 4. Muuda SHEET_ID, DEFAULT_EMAIL, RANNU_EMAIL ja KONGUTA_EMAIL.
- * 5. Deploy → New deployment → Web app.
- * 6. Execute as: Me. Who has access: Anyone.
- * 7. Kopeeri Web app URL ja pane Reacti failis src/data.js bookingSettings.appsScriptUrl väärtuseks.
+ * Mida teeb:
+ * 1. Võtab veebilehe broneeringuvormist päringu vastu.
+ * 2. Salvestab päringu Google Sheeti lehele "Broneeringud".
+ * 3. Saadab e-kirja rahvamaja e-postile.
+ * 4. Saadab kinnituskirja kliendile.
  */
 
-const SHEET_ID = 'PASTE_YOUR_GOOGLE_SHEET_ID_HERE'
+const SHEET_ID = '15eeMfVjiQzbrEVTgstIcEykaj6sSy3f9-hnNAv6yx3I'
 const SHEET_NAME = 'Broneeringud'
-const DEFAULT_EMAIL = 'kultuur@elva.ee'
-const RANNU_EMAIL = 'rannu@elva.ee'
-const KONGUTA_EMAIL = 'konguta@elva.ee'
+
+// Testimiseks võivad need olla alguses sinu enda e-postid.
+// Hiljem asenda Rannu ja Konguta päris e-postidega.
+const DEFAULT_EMAIL = 'meeliskylaots@gmail.com'
+const RANNU_EMAIL = 'meeliskylaots@gmail.com'
+const KONGUTA_EMAIL = 'meeliskylaots@gmail.com'
+
+const ORGANIZATION_NAME = 'Rannu ja Konguta rahvamajad'
 
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('Päringu sisu puudub.')
+    }
+
     const payload = JSON.parse(e.postData.contents)
+    validatePayload_(payload)
+
     const sheet = getOrCreateSheet_()
     ensureHeader_(sheet)
 
+    const bookingId = createBookingId_()
     const staffEmail = getStaffEmail_(payload.house, payload.roomEmail)
-    const selectedServices = (payload.selectedServices || []).map(item => `${item.label} (${formatEuro_(item.total)})`).join('; ')
+    const selectedServicesText = formatSelectedServicesForSheet_(payload.selectedServices)
 
     sheet.appendRow([
       new Date(),
+      bookingId,
       payload.house || '',
       payload.roomName || '',
       payload.date || '',
@@ -36,47 +46,74 @@ function doPost(e) {
       payload.hours || '',
       payload.eventType || '',
       payload.participants || '',
-      payload.publicEvent ? 'avalik' : 'kinnine/era',
+      payload.publicEvent ? 'avalik sündmus' : 'era- või kinnine sündmus',
       payload.name || '',
       payload.email || '',
       payload.phone || '',
-      selectedServices,
-      payload.roomCost || 0,
-      payload.cleaningFee || 0,
-      payload.servicesTotal || 0,
-      payload.estimatedTotal || 0,
+      selectedServicesText,
+      Number(payload.roomCost || 0),
+      'sisaldub ruumi rendihinnas',
+      Number(payload.servicesTotal || 0),
+      Number(payload.estimatedTotal || 0),
       payload.notes || '',
+      payload.disclaimer || '',
       'ootel'
     ])
 
-    const subjectStaff = `Uus ruumi kasutamise soov: ${payload.house} / ${payload.roomName}`
-    const subjectClient = 'Sinu ruumi kasutamise soov on vastu võetud'
-    const body = buildEmailBody_(payload)
+    sendStaffEmail_(staffEmail, payload, bookingId)
+    sendClientEmail_(payload, bookingId)
 
-    MailApp.sendEmail({
-      to: staffEmail,
-      cc: DEFAULT_EMAIL,
-      subject: subjectStaff,
-      htmlBody: body,
-      name: 'Digitaalne kultuuripesa'
+    return jsonResponse_({
+      ok: true,
+      bookingId: bookingId,
+      message: 'Broneeringusoov saadeti edukalt.'
     })
-
-    if (payload.email) {
-      MailApp.sendEmail({
-        to: payload.email,
-        subject: subjectClient,
-        htmlBody: body + '<p><b>NB!</b> Tegemist on päringuga. Lõpliku broneeringu, hinna ja tingimused kinnitab rahvamaja töötaja.</p>',
-        name: 'Rannu ja Konguta rahvamajad'
-      })
-    }
-
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON)
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: false, error: String(error) }))
-      .setMimeType(ContentService.MimeType.JSON)
+    return jsonResponse_({
+      ok: false,
+      error: String(error)
+    })
+  }
+}
+
+function doGet() {
+  return ContentService
+    .createTextOutput('Rannu ja Konguta ruumibroneeringu Apps Script töötab.')
+    .setMimeType(ContentService.MimeType.TEXT)
+}
+
+function testSetup() {
+  const sheet = getOrCreateSheet_()
+  ensureHeader_(sheet)
+
+  MailApp.sendEmail({
+    to: Session.getActiveUser().getEmail(),
+    subject: 'Ruumibroneeringu Apps Script töötab',
+    htmlBody: '<h2>Test õnnestus</h2><p>Google Sheet on leitav ja e-kirjade saatmine töötab.</p>',
+    name: ORGANIZATION_NAME
+  })
+}
+
+function validatePayload_(payload) {
+  const requiredFields = [
+    'house',
+    'roomName',
+    'date',
+    'startTime',
+    'endTime',
+    'eventType',
+    'name',
+    'email',
+    'phone'
+  ]
+
+  const missing = requiredFields.filter(field => !payload[field])
+  if (missing.length > 0) {
+    throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
+  }
+
+  if (!isValidEmail_(payload.email)) {
+    throw new Error('Kliendi e-posti aadress ei ole korrektne.')
   }
 }
 
@@ -89,8 +126,10 @@ function getOrCreateSheet_() {
 
 function ensureHeader_(sheet) {
   if (sheet.getLastRow() > 0) return
+
   sheet.appendRow([
-    'Aeg',
+    'Sisestamise aeg',
+    'Broneeringu ID',
     'Rahvamaja',
     'Ruum',
     'Kuupäev',
@@ -103,68 +142,169 @@ function ensureHeader_(sheet) {
     'Nimi',
     'E-post',
     'Telefon',
-    'Lisateenused',
+    'Valitud lisateenused',
     'Ruumi hind',
-    'Koristus',
+    'Koristus ja ettevalmistus',
     'Teenused kokku',
     'Orienteeruv koguhind',
     'Lisainfo',
+    'Märkus hinna kohta',
     'Staatus'
   ])
+
+  sheet.setFrozenRows(1)
+}
+
+function createBookingId_() {
+  const now = new Date()
+  const datePart = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss')
+  const randomPart = Math.floor(Math.random() * 900 + 100)
+  return `BR-${datePart}-${randomPart}`
 }
 
 function getStaffEmail_(house, roomEmail) {
-  if (roomEmail) return roomEmail
-  if ((house || '').includes('Rannu')) return RANNU_EMAIL
-  if ((house || '').includes('Konguta')) return KONGUTA_EMAIL
+  if (roomEmail && isValidEmail_(roomEmail)) return roomEmail
+
+  const houseText = String(house || '').toLowerCase()
+  if (houseText.includes('rannu')) return RANNU_EMAIL
+  if (houseText.includes('konguta')) return KONGUTA_EMAIL
   return DEFAULT_EMAIL
+}
+
+function sendStaffEmail_(staffEmail, payload, bookingId) {
+  MailApp.sendEmail({
+    to: staffEmail,
+    cc: DEFAULT_EMAIL,
+    subject: `Uus ruumi kasutamise soov: ${payload.house} / ${payload.roomName}`,
+    htmlBody: buildStaffEmailBody_(payload, bookingId),
+    name: ORGANIZATION_NAME
+  })
+}
+
+function sendClientEmail_(payload, bookingId) {
+  if (!payload.email || !isValidEmail_(payload.email)) return
+
+  MailApp.sendEmail({
+    to: payload.email,
+    subject: 'Sinu ruumi kasutamise soov on kätte saadud.',
+    htmlBody: buildClientEmailBody_(payload, bookingId),
+    name: ORGANIZATION_NAME
+  })
+}
+
+function buildStaffEmailBody_(payload, bookingId) {
+  const services = buildServicesHtml_(payload.selectedServices)
+
+  return `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+      <h2>Uus ruumi kasutamise soov</h2>
+      <p><b>Broneeringu ID:</b> ${escapeHtml_(bookingId)}</p>
+      <p><b>Staatus:</b> ootel</p>
+
+      <h3>Ruum ja aeg</h3>
+      <p><b>Rahvamaja:</b> ${escapeHtml_(payload.house || '')}</p>
+      <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
+      <p><b>Kuupäev:</b> ${escapeHtml_(payload.date || '')}</p>
+      <p><b>Kellaaeg:</b> ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
+      <p><b>Arvestuslik kestus:</b> ${escapeHtml_(String(payload.hours || ''))} h</p>
+
+      <h3>Sündmuse info</h3>
+      <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
+      <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
+      <p><b>Kasutus:</b> ${payload.publicEvent ? 'avalik sündmus' : 'era- või kinnine sündmus'}</p>
+
+      <h3>Klient</h3>
+      <p><b>Nimi:</b> ${escapeHtml_(payload.name || '')}</p>
+      <p><b>E-post:</b> ${escapeHtml_(payload.email || '')}</p>
+      <p><b>Telefon:</b> ${escapeHtml_(payload.phone || '')}</p>
+
+      <h3>Valitud lisateenused</h3>
+      ${services}
+
+      <h3>Orienteeruv hind</h3>
+      <table style="border-collapse: collapse;">
+        <tr><td style="padding: 4px 12px 4px 0;">Ruumi kasutus:</td><td style="padding: 4px 0;"><b>${formatEuro_(payload.roomCost)}</b></td></tr>
+        <tr><td style="padding: 4px 12px 4px 0;">Koristus ja ettevalmistus:</td><td style="padding: 4px 0;"><b>sisaldub ruumi rendihinnas</b></td></tr>
+        <tr><td style="padding: 4px 12px 4px 0;">Valitud lisateenused:</td><td style="padding: 4px 0;"><b>${formatEuro_(payload.servicesTotal)}</b></td></tr>
+        <tr><td style="padding: 8px 12px 4px 0; border-top: 1px solid #e5e7eb;">Kokku:</td><td style="padding: 8px 0 4px 0; border-top: 1px solid #e5e7eb;"><b>${formatEuro_(payload.estimatedTotal)}</b></td></tr>
+      </table>
+
+      <h3>Lisainfo</h3>
+      <p>${escapeHtml_(payload.notes || '-')}</p>
+      <p style="margin-top: 24px; color: #6b7280;"><i>${escapeHtml_(payload.disclaimer || '')}</i></p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+      <p><b>Järgmine samm:</b> kontrolli ruumi saadavust, kinnita tingimused ja vasta kliendile.</p>
+    </div>
+  `
+}
+
+function buildClientEmailBody_(payload, bookingId) {
+  const services = buildServicesHtml_(payload.selectedServices)
+
+  return `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+      <h2>Sinu ruumi kasutamise soov on kätte saadud.</h2>
+      <p>Tere, ${escapeHtml_(payload.name || '')}!</p>
+      <p>Aitäh. Sinu ruumi kasutamise soov on kätte saadud.</p>
+      <p><b>Broneeringu ID:</b> ${escapeHtml_(bookingId)}</p>
+
+      <h3>Sinu päringu kokkuvõte</h3>
+      <p><b>Rahvamaja:</b> ${escapeHtml_(payload.house || '')}</p>
+      <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
+      <p><b>Kuupäev:</b> ${escapeHtml_(payload.date || '')}</p>
+      <p><b>Kellaaeg:</b> ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
+      <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
+      <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
+
+      <h3>Valitud lisateenused</h3>
+      ${services}
+
+      <h3>Orienteeruv hind</h3>
+      <p><b>${formatEuro_(payload.estimatedTotal)}</b></p>
+      <p>Koristus ja ettevalmistus sisaldub ruumi rendihinnas.</p>
+      <p style="margin-top: 20px;"><b>NB!</b> See ei ole veel lõplik kinnitatud broneering. Rahvamaja töötaja kontrollib ruumi saadavust, täpsustab vajadused ning kinnitab lõpliku hinna ja tingimused.</p>
+      <p style="margin-top: 24px; color: #6b7280;"><i>${escapeHtml_(payload.disclaimer || '')}</i></p>
+      <p style="margin-top: 24px;">Heade soovidega<br>${ORGANIZATION_NAME}</p>
+    </div>
+  `
+}
+
+function buildServicesHtml_(selectedServices) {
+  if (!selectedServices || selectedServices.length === 0) {
+    return '<p>Lisateenuseid ei valitud.</p>'
+  }
+
+  const items = selectedServices
+    .map(item => `<li>${escapeHtml_(item.label || '')}: ${formatEuro_(item.total)}</li>`)
+    .join('')
+
+  return `<ul>${items}</ul>`
+}
+
+function formatSelectedServicesForSheet_(selectedServices) {
+  if (!selectedServices || selectedServices.length === 0) return 'Lisateenuseid ei valitud'
+  return selectedServices.map(item => `${item.label || ''} (${formatEuro_(item.total)})`).join('; ')
 }
 
 function formatEuro_(value) {
   return `${Number(value || 0).toFixed(2).replace('.', ',')} €`
 }
 
-function buildEmailBody_(payload) {
-  const services = (payload.selectedServices || []).length
-    ? (payload.selectedServices || []).map(item => `<li>${escapeHtml_(item.label)}: ${formatEuro_(item.total)}</li>`).join('')
-    : '<li>Lisateenuseid ei valitud</li>'
-
-  return `
-    <h2>Ruumi kasutamise soov</h2>
-    <p><b>Rahvamaja:</b> ${escapeHtml_(payload.house || '')}</p>
-    <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
-    <p><b>Aeg:</b> ${escapeHtml_(payload.date || '')}, ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
-    <p><b>Arvestuslik kestus:</b> ${escapeHtml_(String(payload.hours || ''))} h</p>
-    <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
-    <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
-    <p><b>Kasutus:</b> ${payload.publicEvent ? 'avalik sündmus' : 'era- või kinnine sündmus'}</p>
-
-    <h3>Klient</h3>
-    <p><b>Nimi:</b> ${escapeHtml_(payload.name || '')}</p>
-    <p><b>E-post:</b> ${escapeHtml_(payload.email || '')}</p>
-    <p><b>Telefon:</b> ${escapeHtml_(payload.phone || '')}</p>
-
-    <h3>Valitud teenused</h3>
-    <ul>${services}</ul>
-
-    <h3>Orienteeruv hind</h3>
-    <p>Ruumi kasutus: ${formatEuro_(payload.roomCost)}</p>
-    <p>Koristus / ettevalmistus: ${formatEuro_(payload.cleaningFee)}</p>
-    <p>Lisateenused: ${formatEuro_(payload.servicesTotal)}</p>
-    <p><b>Kokku: ${formatEuro_(payload.estimatedTotal)}</b></p>
-
-    <h3>Lisainfo</h3>
-    <p>${escapeHtml_(payload.notes || '-')}</p>
-
-    <p><i>${escapeHtml_(payload.disclaimer || '')}</i></p>
-  `
+function isValidEmail_(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim())
 }
 
 function escapeHtml_(value) {
-  return String(value)
+  return String(value || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+}
+
+function jsonResponse_(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON)
 }
