@@ -1,112 +1,19 @@
+export const bookingSettings = {
+  // Piloodi alguses võib see tühjaks jääda. Siis avab broneeringuvorm e-kirja mustandi.
+  // Kui lisad Google Apps Scripti Web App URL-i, saadetakse broneering automaatselt Google Sheeti ja e-postile.
+  appsScriptUrl: '',
+  defaultEmail: 'kultuur@elva.ee',
+  clientCopySubject: 'Sinu ruumi kasutamise soov on vastu võetud',
+  priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.'
+}
+
 export const initialEvents = [
-  {
-    id: 1,
-    title: 'Kogukonna filmiõhtu',
-    house: 'Rannu rahvamaja',
-    date: '12. mai',
-    weekday: 'teisipäev',
-    time: '19.00',
-    audience: 'Täiskasvanutele',
-    category: 'Film',
-    price: 'Tasuta',
-    registration: false,
-    public: true,
-    status: 'published',
-    room: 'Suur saal',
-    tech: 'projektor, heli',
-    owner: 'Rannu rahvamaja',
-    description: 'Hubane filmiõhtu Rannu rahvamajas koos väikese kohvikunurgaga.'
-  },
-  {
-    id: 2,
-    title: 'Loovtöötuba peredele',
-    house: 'Konguta rahvamaja',
-    date: '16. mai',
-    weekday: 'laupäev',
-    time: '11.00',
-    audience: 'Peredele',
-    category: 'Töötuba',
-    price: 'Tasuta',
-    registration: true,
-    public: true,
-    status: 'published',
-    room: 'Töötuba',
-    tech: 'lauad, materjalid',
-    owner: 'Konguta rahvamaja',
-    description: 'Praktiline loovtöötuba lastele ja vanematele. Vajalik eelregistreerimine.'
-  },
-  {
-    id: 3,
-    title: 'Rahvatantsurühma avatud proov',
-    house: 'Rannu rahvamaja',
-    date: '20. mai',
-    weekday: 'kolmapäev',
-    time: '18.00',
-    audience: 'Kõigile',
-    category: 'Huviring',
-    price: 'Tasuta',
-    registration: false,
-    public: true,
-    status: 'published',
-    room: 'Saal',
-    tech: 'muusikakeskus',
-    owner: 'Rahvatantsurühm',
-    description: 'Tule vaata, kuidas rahvatantsurühm tegutseb, ja proovi soovi korral kaasa.'
-  },
-  {
-    id: 4,
-    title: 'Suveõhtu Annikoru välialal',
-    house: 'Konguta rahvamaja',
-    date: '7. juuni',
-    weekday: 'pühapäev',
-    time: '20.00',
-    audience: 'Kõigile',
-    category: 'Kontsert',
-    price: 'Tasuta',
-    registration: false,
-    public: true,
-    status: 'published',
-    room: 'Väliala',
-    tech: 'lava, valgus, heli',
-    owner: 'Konguta rahvamaja',
-    description: 'Kogukondlik suveõhtu muusika, piknikuala ja mõnusa koosolemisega.'
-  },
-  {
-    id: 5,
-    title: 'Eakate kohvihommik',
-    house: 'Rannu rahvamaja',
-    date: '10. juuni',
-    weekday: 'kolmapäev',
-    time: '11.00',
-    audience: 'Eakatele',
-    category: 'Kohtumine',
-    price: 'Tasuta',
-    registration: false,
-    public: true,
-    status: 'published',
-    room: 'Väike saal',
-    tech: 'kohvilaud',
-    owner: 'Rannu rahvamaja',
-    description: 'Rahulik hommikukohv, vestlusring ja info kohalike tegevuste kohta.'
-  },
-  {
-    id: 6,
-    title: 'Noorte ideelabor',
-    house: 'Konguta rahvamaja',
-    date: '14. juuni',
-    weekday: 'pühapäev',
-    time: '15.00',
-    audience: 'Noortele',
-    category: 'Noored',
-    price: 'Tasuta',
-    registration: true,
-    public: true,
-    status: 'published',
-    room: 'Looveruum',
-    tech: 'projektor, märkmepaberid',
-    owner: 'Noorte algatusrühm',
-    description: 'Ideede töötuba noortele, kes tahavad oma kogukonnas midagi ise algatada.'
-  }
+  { id: 1, title: 'Kogukonna filmiõhtu', house: 'Rannu rahvamaja', date: '12. mai', weekday: 'teisipäev', time: '19.00', audience: 'Täiskasvanutele', category: 'Film', price: 'Tasuta', registration: false, public: true, status: 'published', room: 'Suur saal', tech: 'projektor, heli', owner: 'Rannu rahvamaja', description: 'Hubane filmiõhtu Rannu rahvamajas koos väikese kohvikunurgaga.' },
+  { id: 2, title: 'Loovtöötuba peredele', house: 'Konguta rahvamaja', date: '16. mai', weekday: 'laupäev', time: '11.00', audience: 'Peredele', category: 'Töötuba', price: 'Tasuta', registration: true, public: true, status: 'published', room: 'Töötuba', tech: 'lauad, materjalid', owner: 'Konguta rahvamaja', description: 'Praktiline loovtöötuba lastele ja vanematele. Vajalik eelregistreerimine.' },
+  { id: 3, title: 'Rahvatantsurühma avatud proov', house: 'Rannu rahvamaja', date: '20. mai', weekday: 'kolmapäev', time: '18.00', audience: 'Kõigile', category: 'Huviring', price: 'Tasuta', registration: false, public: true, status: 'published', room: 'Saal', tech: 'muusikakeskus', owner: 'Rahvatantsurühm', description: 'Tule vaata, kuidas rahvatantsurühm tegutseb, ja proovi soovi korral kaasa.' },
+  { id: 4, title: 'Suveõhtu Annikoru välialal', house: 'Konguta rahvamaja', date: '7. juuni', weekday: 'pühapäev', time: '20.00', audience: 'Kõigile', category: 'Kontsert', price: 'Tasuta', registration: false, public: true, status: 'published', room: 'Väliala', tech: 'lava, valgus, heli', owner: 'Konguta rahvamaja', description: 'Kogukondlik suveõhtu muusika, piknikuala ja mõnusa koosolemisega.' },
+  { id: 5, title: 'Eakate kohvihommik', house: 'Rannu rahvamaja', date: '10. juuni', weekday: 'kolmapäev', time: '11.00', audience: 'Eakatele', category: 'Kohtumine', price: 'Tasuta', registration: false, public: true, status: 'published', room: 'Väike saal', tech: 'kohvilaud', owner: 'Rannu rahvamaja', description: 'Rahulik hommikukohv, vestlusring ja info kohalike tegevuste kohta.' },
+  { id: 6, title: 'Noorte ideelabor', house: 'Konguta rahvamaja', date: '14. juuni', weekday: 'pühapäev', time: '15.00', audience: 'Noortele', category: 'Noored', price: 'Tasuta', registration: true, public: true, status: 'published', room: 'Looveruum', tech: 'projektor, märkmepaberid', owner: 'Noorte algatusrühm', description: 'Ideede töötuba noortele, kes tahavad oma kogukonnas midagi ise algatada.' }
 ]
 
 export const initialActivities = [
@@ -119,6 +26,68 @@ export const initialActivities = [
 export const initialRequests = [
   { id: 101, type: 'Prooviaja muudatus', title: 'Rahvatantsu proov soovib liikuda kolmapäevale', submittedBy: 'Rahvatantsurühma juht', house: 'Rannu rahvamaja', target: 'Rahvatants', oldValue: 'Teisipäeviti 18.00', newValue: 'Kolmapäeviti 18.30', status: 'ootel' },
   { id: 102, type: 'Uus sündmus', title: 'Kogukonna pannkoogihommik', submittedBy: 'Konguta külaseltsi esindaja', house: 'Konguta rahvamaja', target: 'Avalik kalender', oldValue: '-', newValue: '22. juuni kell 10.00', status: 'ootel' }
+]
+
+// Näidishinnad. Asenda enne päriskasutust Elva valla kinnitatud hinnakirjaga.
+export const rentalRooms = [
+  {
+    id: 'rannu-saal',
+    house: 'Rannu rahvamaja',
+    email: 'rannu@elva.ee',
+    name: 'Suur saal',
+    capacity: 120,
+    hourlyRate: 25,
+    minimumHours: 2,
+    cleaningFee: 20,
+    description: 'Sobib kontserdiks, peoks, koosolekuks ja koolituseks.',
+    included: ['lava', 'toolide-laudade põhipaigutus', 'esmane kasutajajuhend']
+  },
+  {
+    id: 'rannu-vaike-saal',
+    house: 'Rannu rahvamaja',
+    email: 'rannu@elva.ee',
+    name: 'Väike saal / koosolekuruum',
+    capacity: 35,
+    hourlyRate: 15,
+    minimumHours: 1,
+    cleaningFee: 10,
+    description: 'Sobib koosolekuks, väiksemaks töötoaks ja nõupidamiseks.',
+    included: ['lauad ja toolid', 'wifi', 'põhikoristus kokkuleppel']
+  },
+  {
+    id: 'konguta-saal',
+    house: 'Konguta rahvamaja',
+    email: 'konguta@elva.ee',
+    name: 'Saal',
+    capacity: 80,
+    hourlyRate: 22,
+    minimumHours: 2,
+    cleaningFee: 20,
+    description: 'Paindlik ruum töötubadeks, perepäevadeks, pidudeks ja kogukonnaüritusteks.',
+    included: ['lauad ja toolid', 'projektori kasutamise võimalus', 'esmane kasutajajuhend']
+  },
+  {
+    id: 'konguta-valiala',
+    house: 'Konguta rahvamaja',
+    email: 'konguta@elva.ee',
+    name: 'Väliala / laululava ümbrus',
+    capacity: 300,
+    hourlyRate: 30,
+    minimumHours: 3,
+    cleaningFee: 30,
+    description: 'Sobib suveõhtuks, välisündmuseks ja kogukonna koosviibimiseks.',
+    included: ['väliala kasutus', 'ligipääsu kokkulepe', 'esmane riskide ülevaatus']
+  }
+]
+
+export const rentalServices = [
+  { id: 'basic-sound', label: 'Helitehnika põhikomplekt', description: 'Kõlarid ja mikrofon kuni väikese sündmuse jaoks.', price: 20, pricing: 'fixed' },
+  { id: 'projector', label: 'Projektor ja ekraan', description: 'Esitlus, film või koosolekumaterjalid.', price: 10, pricing: 'fixed' },
+  { id: 'light-basic', label: 'Valgustuse põhiseadistus', description: 'Lihtne lava- või saalivalgus.', price: 25, pricing: 'fixed' },
+  { id: 'tech-hour', label: 'Tehniku kohalolu', description: 'Tehniline tugi sündmuse ajal.', price: 20, pricing: 'hourly' },
+  { id: 'coffee', label: 'Kohvilaua ettevalmistus', description: 'Kohv, tee ja lauanõud. Toitlustus eraldi kokkuleppel.', price: 15, pricing: 'fixed' },
+  { id: 'extra-cleaning', label: 'Lisakoristus', description: 'Kui sündmus vajab tavapärasest põhjalikumat koristust.', price: 25, pricing: 'fixed' },
+  { id: 'tables-special', label: 'Eripaigutus', description: 'Toolide ja laudade erilahendus enne sündmust.', price: 15, pricing: 'fixed' }
 ]
 
 export const rooms = [
