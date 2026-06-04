@@ -194,6 +194,8 @@ function sendClientEmail_(payload, bookingId) {
 
 function buildStaffEmailBody_(payload, bookingId) {
   const services = buildServicesHtml_(payload.selectedServices)
+  const included = buildListHtml_(payload.includedItems, 'Info puudub.')
+  const agreement = buildListHtml_(payload.agreementItems, 'Eraldi kokkuleppeid ei märgitud.')
 
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
@@ -218,6 +220,18 @@ function buildStaffEmailBody_(payload, bookingId) {
       <p><b>E-post:</b> ${escapeHtml_(payload.email || '')}</p>
       <p><b>Telefon:</b> ${escapeHtml_(payload.phone || '')}</p>
 
+      <h3>Rendi hinna sees</h3>
+      ${included}
+
+      <h3>Eraldi kokkuleppel</h3>
+      ${agreement}
+
+      <h3>Rendi hinna sees</h3>
+      ${included}
+
+      <h3>Eraldi kokkuleppel</h3>
+      ${agreement}
+
       <h3>Valitud lisateenused</h3>
       ${services}
 
@@ -240,6 +254,8 @@ function buildStaffEmailBody_(payload, bookingId) {
 
 function buildClientEmailBody_(payload, bookingId) {
   const services = buildServicesHtml_(payload.selectedServices)
+  const included = buildListHtml_(payload.includedItems, 'Info puudub.')
+  const agreement = buildListHtml_(payload.agreementItems, 'Eraldi kokkuleppeid ei märgitud.')
 
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
@@ -256,6 +272,18 @@ function buildClientEmailBody_(payload, bookingId) {
       <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
       <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
 
+      <h3>Rendi hinna sees</h3>
+      ${included}
+
+      <h3>Eraldi kokkuleppel</h3>
+      ${agreement}
+
+      <h3>Rendi hinna sees</h3>
+      ${included}
+
+      <h3>Eraldi kokkuleppel</h3>
+      ${agreement}
+
       <h3>Valitud lisateenused</h3>
       ${services}
 
@@ -267,6 +295,18 @@ function buildClientEmailBody_(payload, bookingId) {
       <p style="margin-top: 24px;">Heade soovidega<br>${ORGANIZATION_NAME}</p>
     </div>
   `
+}
+
+function buildListHtml_(items, emptyText) {
+  if (!items || items.length === 0) {
+    return `<p>${escapeHtml_(emptyText || '-')}</p>`
+  }
+
+  const listItems = items
+    .map(item => `<li>${escapeHtml_(item)}</li>`)
+    .join('')
+
+  return `<ul>${listItems}</ul>`
 }
 
 function buildServicesHtml_(selectedServices) {
