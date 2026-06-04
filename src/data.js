@@ -1,8 +1,6 @@
 export const bookingSettings = {
-  // Piloodi alguses võib see tühjaks jääda. Siis avab broneeringuvorm e-kirja mustandi.
-  // Kui lisad Google Apps Scripti Web App URL-i, saadetakse broneering automaatselt Google Sheeti ja e-postile.
-  appsScriptUrl: '',
-  defaultEmail: 'kultuur@elva.ee',
+  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbzdFUJ4VLN_jjgX3KZsGDtwpU6cdBuLlRNGyZRodzIOktR2ZF6IuIGGMe_CV4rlnIe5/exec',
+  defaultEmail: 'meeliskylaots@gmail.com',
   clientCopySubject: 'Sinu ruumi kasutamise soov on vastu võetud',
   priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.'
 }
