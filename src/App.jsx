@@ -6,6 +6,7 @@ import {
   initialActivities,
   initialEvents,
   initialRequests,
+  instructors,
   rentalRooms,
   rentalServices,
   roles
@@ -20,6 +21,7 @@ const VIEW_LABELS = {
   houses: 'Rahvamajad',
   contact: 'Kontakt',
   login: 'Töötajale',
+  instructor: 'Juhendajale',
   admin: 'Sisuhaldus'
 }
 
@@ -81,7 +83,10 @@ function formatEuro(value) {
 
 function getPublicTitle(item) {
   const status = normalizeStatusForCalendar(item.status)
-  if (status === 'pending') return 'Broneeritud (ootab kinnitamist)'
+  if (status === 'pending') {
+    const base = item.publicTitle || item.calendarText || 'Broneeritud'
+    return String(base).toLowerCase().includes('ootab') ? base : `${base} (ootab kinnitamist)`
+  }
   if (item.displayMode === 'neutral') return item.publicTitle || 'Ruum broneeritud'
   if (item.displayMode === 'category') return item.publicTitle || item.category || 'Rahvamaja kasutuses'
   return item.publicTitle || item.title
@@ -114,7 +119,7 @@ function bookingToCalendarEvent(item) {
   const roomId = item.roomId || roomIdFromHouseAndRoom(item.house, item.roomName || item.room)
   const room = getRoomById(roomId)
   const normalizedStatus = normalizeStatusForCalendar(item.status)
-  const publicTitle = normalizedStatus === 'pending' ? 'Broneeritud (ootab kinnitamist)' : (item.publicTitle || item.calendarText || (item.publicEvent ? (item.eventType || 'Avalik sündmus') : 'Ruum broneeritud'))
+  const publicTitle = item.publicTitle || item.calendarText || (normalizedStatus === 'pending' ? 'Broneeritud' : (item.publicEvent ? (item.eventType || 'Avalik sündmus') : 'Ruum broneeritud'))
   return {
     id: item.id || item.bookingId || `sheet-${item.rowNumber || Math.random()}`,
     title: item.internalTitle || item.eventType || 'Broneering',
@@ -699,16 +704,29 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
       <SectionHeader eyebrow="Broneeringusoov" title="Täienda andmed ja saada soov" text="Ruum ja aeg on valitud kalendrivaates. Nüüd lisa sündmuse, teenuste ja kontaktide info." />
       <div className="mb-5 flex gap-2 overflow-x-auto pb-2"><StepBadge step={1} current={step} label="Ruum ja aeg" /><StepBadge step={2} current={step} label="Sündmus" /><StepBadge step={3} current={step} label="Teenused" /><StepBadge step={4} current={step} label="Kontakt" /></div>
       <div className="grid gap-6 lg:grid-cols-[0.75fr_1.25fr]">
-        <aside className="rounded-[1.5rem] bg-slate-950 p-6 text-white lg:sticky lg:top-24 lg:self-start">
-          <p className="text-sm font-black uppercase tracking-wide text-white/50">Orienteeruv hind</p>
-          <p className="mt-3 text-4xl font-black">{formatEuro(estimatedTotal)}</p>
-          <div className="mt-5 space-y-2 text-sm text-white/75"><div className="flex justify-between"><span>Ruum {billableHours} h × {formatEuro(room.hourlyRate)}</span><b>{formatEuro(roomCost)}</b></div><div className="flex justify-between"><span>Koristus ja ettevalmistus</span><b>hinnas</b></div>{selectedServices.length ? selectedServices.map((s) => <div key={s.id} className="flex justify-between"><span>{s.label}</span><b>{formatEuro(s.total)}</b></div>) : <div className="flex justify-between"><span>Lisateenuseid ei ole valitud</span><b>{formatEuro(0)}</b></div>}</div>
-          <p className="mt-5 text-xs leading-5 text-white/55">{bookingSettings.priceDisclaimer}</p>
+        <aside className="sticky top-2 z-20 rounded-[1.25rem] bg-slate-950 p-4 text-white shadow-xl lg:top-24 lg:self-start lg:rounded-[1.5rem] lg:p-6">
+          <div className="flex items-end justify-between gap-4 lg:block">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-white/50 lg:text-sm">Orienteeruv hind</p>
+              <p className="mt-1 text-3xl font-black lg:mt-3 lg:text-4xl">{formatEuro(estimatedTotal)}</p>
+            </div>
+            <p className="mb-1 rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/75 lg:hidden">kokku</p>
+          </div>
+          <div className="mt-4 space-y-2 text-sm text-white/75 lg:mt-5">
+            <div className="flex justify-between gap-3"><span>Ruum {billableHours} h × {formatEuro(room.hourlyRate)}</span><b>{formatEuro(roomCost)}</b></div>
+            <div className="flex justify-between gap-3"><span>Koristus ja ettevalmistus</span><b>hinnas</b></div>
+            {selectedServices.length ? selectedServices.map((s) => <div key={s.id} className="flex justify-between gap-3"><span>{s.label}</span><b>{formatEuro(s.total)}</b></div>) : <div className="flex justify-between gap-3"><span>Lisateenuseid ei ole valitud</span><b>{formatEuro(0)}</b></div>}
+            <div className="mt-3 border-t border-white/15 pt-3">
+              <div className="flex justify-between gap-3"><span>Teenused kokku</span><b>{formatEuro(servicesTotal)}</b></div>
+              <div className="mt-2 flex justify-between gap-3 text-base text-white"><span className="font-black">Kogusumma</span><b>{formatEuro(estimatedTotal)}</b></div>
+            </div>
+          </div>
+          <p className="mt-4 text-xs leading-5 text-white/55 lg:mt-5">{bookingSettings.priceDisclaimer}</p>
         </aside>
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-6">
           {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
           {step === 2 && <BookingStepEvent form={form} setForm={setForm} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
-          {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} selectedServices={selectedServices} servicesTotal={servicesTotal} estimatedTotal={estimatedTotal} roomCost={roomCost} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
+          {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
           {step === 4 && <BookingStepContact form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
         </section>
       </div>
@@ -730,7 +748,7 @@ function BookingStepEvent({ form, setForm, onBack, onNext }) {
   return <div><h2 className="text-2xl font-black">2. Sündmuse info</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Sündmuse liik" required><select className={inputClass} value={form.eventType} onChange={(e) => setForm({ ...form, eventType: e.target.value })}><option value="">Vali liik</option>{EVENT_TYPE_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Osalejate arv" required><input className={inputClass} value={form.participants} onChange={(e) => setForm({ ...form, participants: e.target.value })} placeholder="nt 40" /></Field><label className="md:col-span-2 flex items-start gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.publicEvent} onChange={(e) => setForm({ ...form, publicEvent: e.target.checked })} className="mt-1" /><span><b>Soovin, et sündmus oleks avalikus kalendris detailidega nähtav.</b><span className="block text-sm text-slate-600">Kui mitte, kuvatakse kasutuskalendris neutraalne tekst, näiteks “Ruum broneeritud”.</span></span></label><Field label="Lisainfo"><textarea className={`${inputClass} min-h-[110px] md:col-span-2`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Kirjelda lisasoove, tehnilisi vajadusi või muid olulisi asjaolusid." /></Field></div><div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Jätka</button></div></div>
 }
 
-function BookingStepServices({ form, room, toggleService, selectedServices, servicesTotal, estimatedTotal, roomCost, onBack, onNext }) {
+function BookingStepServices({ form, room, toggleService, onBack, onNext }) {
   return (
     <div>
       <h2 className="text-2xl font-black">3. Teenused ja hind</h2>
@@ -748,16 +766,6 @@ function BookingStepServices({ form, room, toggleService, selectedServices, serv
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         {rentalServices.map((service) => <label key={service.id} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 hover:bg-slate-50"><input type="checkbox" checked={form.services.includes(service.id)} onChange={() => toggleService(service.id)} className="mt-1" /><span><b>{service.label}</b><span className="block text-sm text-slate-600">{service.description}</span><span className="mt-2 block text-sm font-black text-emerald-700">{service.pricing === 'hourly' ? `${formatEuro(service.price)} / h` : formatEuro(service.price)}</span></span></label>)}
-      </div>
-      <div className="mt-5 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
-        <h3 className="text-lg font-black text-emerald-950">Hinnakokkuvõte</h3>
-        <div className="mt-3 space-y-2 text-sm text-emerald-950">
-          <div className="flex justify-between gap-3"><span>Ruumi kasutus</span><b>{formatEuro(roomCost)}</b></div>
-          <div className="flex justify-between gap-3"><span>Koristus ja ettevalmistus</span><b>hinnas</b></div>
-          {selectedServices.length ? selectedServices.map((service) => <div key={service.id} className="flex justify-between gap-3"><span>{service.label}</span><b>{formatEuro(service.total)}</b></div>) : <div className="flex justify-between gap-3"><span>Valitud lisateenused</span><b>{formatEuro(0)}</b></div>}
-          <div className="flex justify-between gap-3 border-t border-emerald-200 pt-3 text-base"><span className="font-black">Teenused kokku</span><b>{formatEuro(servicesTotal)}</b></div>
-          <div className="flex justify-between gap-3 text-xl"><span className="font-black">Kogusumma</span><b>{formatEuro(estimatedTotal)}</b></div>
-        </div>
       </div>
       <div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Jätka</button></div>
     </div>
@@ -816,6 +824,154 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
           {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
           <button onClick={enterAdmin} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava töölaud</button>
           {isAdminUnlocked && <button onClick={() => setView('admin')} className="mt-3 w-full rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Mine tagasi töölauda</button>}
+        </section>
+      </div>
+      <section className="mt-6 rounded-[1.5rem] bg-emerald-50 p-5 ring-1 ring-emerald-100">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <div>
+            <h2 className="text-xl font-black text-slate-950">Juhendaja või kollektiivijuht</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-700">Sisesta oma e-post ja isiklik PIN, et esitada proovide, lisaproovide või sündmuste muudatusi juhatajale kinnitamiseks.</p>
+          </div>
+          <button onClick={() => setView('instructor')} className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava juhendaja vorm</button>
+        </div>
+      </section>
+    </Page>
+  )
+}
+
+function InstructorView({ events, activities, onUsageCreated }) {
+  const [email, setEmail] = useState('')
+  const [pin, setPin] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [instructor, setInstructor] = useState(null)
+  const [message, setMessage] = useState('')
+  const [form, setForm] = useState({
+    requestType: 'Proov',
+    date: '',
+    startTime: '18:00',
+    endTime: '20:00',
+    publicTitle: '',
+    displayMode: 'category',
+    notes: ''
+  })
+
+  async function authenticate() {
+    setAuthError('')
+    const normalizedEmail = email.trim().toLowerCase()
+    try {
+      if (bookingSettings.appsScriptUrl) {
+        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', email: normalizedEmail, pin })
+        if (data?.ok && data.instructor) {
+          setInstructor(data.instructor)
+          setForm((current) => ({ ...current, publicTitle: data.instructor.collective || '' }))
+          return
+        }
+      }
+    } catch (error) {
+      // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
+    }
+
+    const local = instructors.find((item) => item.active && item.email.toLowerCase() === normalizedEmail && String(item.pin) === String(pin))
+    if (local) {
+      setInstructor(local)
+      setForm((current) => ({ ...current, publicTitle: local.collective || '' }))
+    } else {
+      setAuthError('E-post ja PIN ei klapi aktiivse juhendaja andmetega.')
+    }
+  }
+
+  function logout() {
+    setInstructor(null)
+    setPin('')
+    setMessage('')
+  }
+
+  if (!instructor) {
+    return (
+      <Page>
+        <SectionHeader eyebrow="Juhendajale" title="Sisesta kollektiivi tegevus või prooviaja muudatus" text="Juhendaja ei avalda infot otse. Sisestus liigub juhatajale või administraatorile kinnitamiseks ning alles pärast kinnitamist ilmub see avalikku kalendrisse ja hakkab ruumi blokeerima." />
+        <section className="max-w-xl rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <Field label="E-post" required><input type="email" className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="juhendaja@email.ee" /></Field>
+          <div className="mt-3"><Field label="Isiklik PIN" required><input type="password" className={inputClass} value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN" /></Field></div>
+          {authError && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{authError}</p>}
+          <button onClick={authenticate} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava vorm</button>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis: juhendaja@example.com / 4821 või kasitoo@example.com / 7394. Päris kasutuses määrab PIN-id juhataja.</p>
+        </section>
+      </Page>
+    )
+  }
+
+  const room = getRoomById(instructor.roomId)
+  const availability = getAvailability(instructor.roomId, form.date, form.startTime, form.endTime, events, activities)
+  const canSubmit = form.date && form.startTime && form.endTime && form.publicTitle && availability.status === 'free'
+
+  async function submitInstructorRequest() {
+    if (!canSubmit) return
+    const usageId = `JR-${Date.now()}`
+    const payload = {
+      action: 'createUsage',
+      bookingId: usageId,
+      type: form.requestType,
+      status: 'ootel',
+      instructorId: instructor.id,
+      collective: instructor.collective,
+      house: instructor.house,
+      roomId: instructor.roomId,
+      roomName: instructor.room,
+      date: form.date,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      reservedStartTime: minutesToTime(availability.reservedStart),
+      reservedEndTime: minutesToTime(availability.reservedEnd),
+      bufferBeforeMinutes: room.bufferBeforeMinutes || 0,
+      bufferAfterMinutes: room.bufferAfterMinutes || 0,
+      hours: Math.max(0, (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60),
+      eventType: form.requestType,
+      participants: '',
+      publicEvent: form.displayMode !== 'neutral',
+      name: instructor.name,
+      email: instructor.email,
+      phone: '',
+      publicTitle: form.publicTitle,
+      displayMode: form.displayMode,
+      notes: form.notes,
+      disclaimer: 'Juhendaja sisestus ootab juhataja või administraatori kinnitust.'
+    }
+
+    await postToAppsScript(payload)
+    onUsageCreated?.({ ...payload, id: usageId, status: 'ootel', calendarText: payload.publicTitle })
+    setMessage('Sisestus saadeti juhatajale kinnitamiseks. Kui see kinnitatakse, ilmub see avalikku kalendrisse ja blokeerib ruumi.')
+    setForm((current) => ({ ...current, notes: '' }))
+  }
+
+  return (
+    <Page>
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+        <SectionHeader eyebrow="Juhendajale" title={`${instructor.collective} · ${instructor.house}`} text="Lisa proov, lisaproov, sündmus või prooviaja muudatus. Kõik sisestused lähevad enne avaldamist juhatajale kinnitamiseks." />
+        <button onClick={logout} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-200">Välju</button>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Sisestuse andmed</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Field label="Tegevuse liik" required><select className={inputClass} value={form.requestType} onChange={(e) => setForm({ ...form, requestType: e.target.value })}><option>Proov</option><option>Lisaproov</option><option>Sündmus</option><option>Prooviaja muudatus</option><option>Proovi tühistamine</option></select></Field>
+            <Field label="Ruum"><input className={inputClass} value={`${room.house} · ${room.name}`} disabled /></Field>
+            <Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
+            <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
+            <Field label="Lõpp" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field>
+            <Field label="Avaliku kalendri tekst" required><input className={inputClass} value={form.publicTitle} onChange={(e) => setForm({ ...form, publicTitle: e.target.value })} placeholder="nt Rahvatantsu proov või Ringitegevus" /></Field>
+            <Field label="Kuvamise viis"><select className={inputClass} value={form.displayMode} onChange={(e) => setForm({ ...form, displayMode: e.target.value })}><option value="category">Üldise kategooriana</option><option value="full">Täpse tekstina</option><option value="neutral">Neutraalselt: ruum kasutuses</option></select></Field>
+            <Field label="Lisainfo juhatajale"><textarea className={`${inputClass} min-h-[110px] md:col-span-2`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Lisa selgitus, miks muudatus vajalik on või mida juhataja peaks teadma." /></Field>
+          </div>
+          {availability.status === 'free' && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Aeg on kalendri ja puhvri järgi esialgu vaba. Broneerimiseks suletakse {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</p>}
+          {availability.status === 'busy' && <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm font-bold text-rose-900 ring-1 ring-rose-100">Valitud aeg kattub olemasoleva kasutusega. Vali teine aeg või kirjuta juhatajale lisainfo väljale.</p>}
+          {message && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{message}</p>}
+          <button disabled={!canSubmit} onClick={submitInstructorRequest} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button>
+        </section>
+        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Sama ruumi kasutus valitud päeval</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Juhendaja näeb enne sisestamist, kas ruum on juba kasutuses või broneeritud.</p>
+          <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={instructor.roomId} dateISO={form.date} /></div>
         </section>
       </div>
     </Page>
@@ -963,6 +1119,17 @@ export default function App() {
     })
   }
 
+  function handleUsageCreated(usage) {
+    setBookings((current) => {
+      const exists = current.some((item) => String(item.bookingId || item.id) === String(usage.bookingId || usage.id))
+      return exists ? current : [{ ...usage, publicTitle: usage.publicTitle || 'Kasutus ootab kinnitamist' }, ...current]
+    })
+    setSheetUsages((current) => {
+      const exists = current.some((item) => String(item.bookingId || item.id) === String(usage.bookingId || usage.id))
+      return exists ? current : [{ ...usage, publicTitle: usage.publicTitle || 'Kasutus ootab kinnitamist' }, ...current]
+    })
+  }
+
   const combinedSheetUsages = useMemo(() => {
     const map = new Map()
     ;[...sheetUsages, ...bookings.filter((item) => ['ootel', 'pending', 'kinnitatud', 'published'].includes(String(item.status || '').toLowerCase()))].forEach((item) => {
@@ -988,6 +1155,7 @@ export default function App() {
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
+      {view === 'instructor' && <InstructorView events={events} activities={activities} onUsageCreated={handleUsageCreated} />}
       {view === 'login' && <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} />}
       {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={selectedRole} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} />)}
       <MobileNav view={view} setView={setView} />

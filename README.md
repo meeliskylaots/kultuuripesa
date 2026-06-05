@@ -1,118 +1,49 @@
-# Rannu & Konguta digitaalne kultuuripesa
+# Digitaalne Kultuuripesa v14
 
-See on kiire React + GitHub Pages prototüüp Rannu ja Konguta rahvamajade avaliku vaate ning sisselogitud sisuhalduse loogika testimiseks.
+Versioon v14 lisab juhendaja / kollektiivijuhi lihtvormi e-post + PIN kontrolliga.
 
-Prototüüp sisaldab:
+## Uus v14-s
 
-- avalikku sündmuste vaadet;
-- ringide ja tegevuste vaadet;
-- ruumide rendi infot;
-- rahvamajade tutvustust;
-- töötaja / juhendaja vaate prototüüpi;
-- rollipõhise sisuhalduse näidet;
-- kinnitamise töövoo näidet;
-- GitHub Pages automaatset avaldamist;
-- GitHub Issue vorme muudatussoovide kogumiseks.
+- Juhendaja vaade: `Töötajale` → `Ava juhendaja vorm`.
+- Juhendaja autentimine e-posti ja isikliku PIN-koodiga.
+- Näidisjuhendajad:
+  - `juhendaja@example.com` / `4821`
+  - `kasitoo@example.com` / `7394`
+- Juhendaja saab esitada proovi, lisaproovi, sündmuse, prooviaja muudatuse või tühistamise soovi.
+- Sisestus läheb Google Sheeti staatuses `ootel`.
+- Juhataja/admin näeb sisestust PIN-koodiga töövaates ja saab selle kinnitada või tühistada.
+- Kinnitamisel ilmub kirje avalikku ruumikalendrisse ning hakkab ruumi blokeerima.
 
-## 1. Kiire käivitamine arvutis
+## Paigaldus GitHubis
 
-Kui Node.js on olemas:
-
-```bash
-npm install
-npm run dev
-```
-
-Seejärel ava brauseris aadress, mida Vite näitab.
-
-## 2. GitHubi panemine
-
-1. Loo GitHubis uus repo, näiteks `digitaalne-kultuuripesa`.
-2. Laadi selle ZIP-faili sisu reposse.
-3. Ava repo seaded: `Settings -> Pages`.
-4. Vali `Build and deployment -> Source -> GitHub Actions`.
-5. Tee commit `main` harusse.
-6. GitHub Actions ehitab ja avaldab lehe automaatselt.
-
-Leht tekib kujul:
+Asenda vähemalt:
 
 ```text
-https://SINU-KASUTAJANIMI.github.io/digitaalne-kultuuripesa/
-```
-
-Kui kasutad teist repo nime, töötab projekt tavaliselt ikka, sest `vite.config.js` kasutab suhtelist `base: './'` seadistust.
-
-## 3. Kuidas sisu praegu muuta
-
-Esimeses versioonis asub näidissisu failis:
-
-```text
+src/App.jsx
 src/data.js
 ```
 
-Sealt saab muuta:
-
-- sündmusi;
-- ringe ja kollektiive;
-- rahvamajade infot;
-- ruumide infot;
-- kasutajarolle.
-
-Avalikus vaates kuvatakse ainult sündmusi, millel on:
-
-```js
-status: 'published',
-public: true
-```
-
-## 4. Kuidas kollektiivide juhid saavad piloodis muudatusi esitada
-
-GitHubis on olemas Issue Forms mallid:
-
-- `Prooviaja muudatus`
-- `Sündmuse lisamine`
-- `Ruumibroneeringu soov`
-- `Vea või parandusettepaneku teade`
-
-Need asuvad kaustas:
+Kuna v14 muudab ka Apps Scripti, asenda ka:
 
 ```text
-.github/ISSUE_TEMPLATE/
+google/booking-apps-script.gs
 ```
 
-Piloodis saab kollektiivi juht teha GitHub Issue kaudu muudatussoovi. Rahvamaja juht vaatab selle üle ja muudab vastavalt sisu failis `src/data.js` või hilisemas lahenduses Google Sheetis.
-
-## 5. Google Sheets järgmise sammuna
-
-Kaustas `google/` on fail:
+Google Apps Scriptis tee pärast koodi asendamist:
 
 ```text
-google/apps-script-starter.gs
+Save → Deploy → Manage deployments → Edit → New version → Deploy
 ```
 
-See on algne Google Apps Script, millega saab Google Sheetsist JSON-andmed välja anda. Seda saab kasutada järgmises etapis, et rahvamaja juht ei peaks sisu GitHubis muutma, vaid saaks andmeid hallata Google Sheetsis.
+`package-lock.json` jäta GitHubist välja.
 
-Soovituslikud Google Sheeti lehed:
+## Juhendajate haldus
 
-- `Sundmused`
-- `Ringid`
-- `Ruumid`
-- `Majad`
+Apps Script loob Google Sheeti lehe `Juhendajad`, kui seda pole veel olemas. Sealt saad muuta juhendajate e-posti, PIN-i, kollektiivi, ruumi ja aktiivsust.
 
-## 6. Mida see prototüüp veel ei tee
+Veerud:
 
-See ei ole veel päris turvalise sisselogimise ja andmebaasiga süsteem. Praegune töötaja vaade on kasutajateekonna ja töövoo testimiseks.
+```text
+Juhendaja ID | Nimi | E-post | PIN | Kollektiiv | Rahvamaja | Ruum | RoomID | Aktiivne
+```
 
-Päris töövahendiks on vaja hiljem lisada üks neist:
-
-- Google Sheets + Apps Script andmeallikana;
-- Supabase / Firebase päris sisselogimiseks ja rollipõhisteks õigusteks;
-- olemasoleva Elva Kultuuri veebiga liidestamine.
-
-## 7. Piloodi soovituslik eesmärk
-
-Piloodis testi kolme küsimust:
-
-1. Kas tavakodanik leiab sündmused, ringid, ruumid ja kontaktid kiiresti?
-2. Kas kollektiivi juht saab aru, kuidas prooviaja muutmine käib?
-3. Kas rahvamaja juht saab aru, mida ta peab kinnitama ja mis jõuab avalikku vaatesse?
