@@ -21,6 +21,8 @@ const HEADERS = [
   'Broneeringu ID',
   'Tüüp',
   'Staatus',
+  'Kollektiiv',
+  'Juhendaja ID',
   'Rahvamaja',
   'Ruum',
   'RoomID',
@@ -51,6 +53,13 @@ const HEADERS = [
   'Kinnituskiri saadetud'
 ]
 
+const INSTRUCTOR_SHEET_NAME = 'Juhendajad'
+const INSTRUCTOR_HEADERS = ['Juhendaja ID', 'Nimi', 'E-post', 'PIN', 'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Aktiivne']
+const DEFAULT_INSTRUCTORS = [
+  ['rahvatants-rannu', 'Rahvatantsurühma juhendaja', 'juhendaja@example.com', '4821', 'Rahvatants', 'Rannu rahvamaja', 'Suur saal', 'rannu-saal', 'jah'],
+  ['kasitoo-konguta', 'Käsitööringi juhendaja', 'kasitoo@example.com', '7394', 'Käsitöö- ja loovtöötuba', 'Konguta rahvamaja', 'Saal', 'konguta-saal', 'jah']
+]
+
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {}
   const action = params.action || 'ping'
@@ -60,6 +69,8 @@ function doGet(e) {
   try {
     if (action === 'list') {
       data = listBookings_()
+    } else if (action === 'authInstructor') {
+      data = authInstructor_(params.email, params.pin)
     } else {
       data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
     }
@@ -90,6 +101,10 @@ function doPost(e) {
       return jsonResponse_(updateStatus_(payload))
     }
 
+    if (payload.action === 'createUsage') {
+      return jsonResponse_(createUsage_(payload))
+    }
+
     return jsonResponse_(createBooking_(payload))
   } catch (error) {
     return jsonResponse_({ ok: false, error: String(error) })
@@ -99,6 +114,7 @@ function doPost(e) {
 function testSetup() {
   const sheet = getOrCreateSheet_()
   ensureHeader_(sheet)
+  ensureInstructorSheet_()
   MailApp.sendEmail({
     to: Session.getActiveUser().getEmail(),
     subject: 'Kultuuripesa Apps Script töötab',
@@ -120,6 +136,8 @@ function createBooking_(payload) {
     'Broneeringu ID': bookingId,
     'Tüüp': payload.type || 'broneering',
     'Staatus': payload.status || 'ootel',
+    'Kollektiiv': payload.collective || '',
+    'Juhendaja ID': payload.instructorId || '',
     'Rahvamaja': payload.house || '',
     'Ruum': payload.roomName || '',
     'RoomID': payload.roomId || '',
@@ -157,6 +175,127 @@ function createBooking_(payload) {
   sendClientReceivedEmail_(payload, bookingId)
 
   return { ok: true, bookingId, message: 'Broneeringusoov saadeti edukalt.' }
+}
+
+function createUsage_(payload) {
+  const requiredFields = ['house', 'roomName', 'roomId', 'date', 'startTime', 'endTime', 'name', 'email', 'publicTitle']
+  const missing = requiredFields.filter(field => !payload[field])
+  if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
+
+  const sheet = getOrCreateSheet_()
+  const headers = ensureHeader_(sheet)
+  const usageId = payload.bookingId || payload.id || createUsageId_()
+
+  const rowObject = {
+    'Sisestamise aeg': new Date(),
+    'Broneeringu ID': usageId,
+    'Tüüp': payload.type || 'juhendaja sisestus',
+    'Staatus': payload.status || 'ootel',
+    'Kollektiiv': payload.collective || '',
+    'Juhendaja ID': payload.instructorId || '',
+    'Rahvamaja': payload.house || '',
+    'Ruum': payload.roomName || '',
+    'RoomID': payload.roomId || '',
+    'Kuupäev': payload.date || '',
+    'Algus': payload.startTime || '',
+    'Lõpp': payload.endTime || '',
+    'Ruum kinni alates': payload.reservedStartTime || payload.startTime || '',
+    'Ruum kinni kuni': payload.reservedEndTime || payload.endTime || '',
+    'Puhver enne (min)': payload.bufferBeforeMinutes || '',
+    'Puhver pärast (min)': payload.bufferAfterMinutes || '',
+    'Tunnid': payload.hours || '',
+    'Sündmuse liik': payload.eventType || payload.type || '',
+    'Osalejad': payload.participants || '',
+    'Kasutus': payload.publicEvent ? 'avalik sündmus' : 'sisemine kasutus',
+    'Nimi': payload.name || '',
+    'E-post': payload.email || '',
+    'Telefon': payload.phone || '',
+    'Valitud lisateenused': '',
+    'Ruumi hind': '',
+    'Koristus ja ettevalmistus': '',
+    'Teenused kokku': '',
+    'Orienteeruv koguhind': '',
+    'Lisainfo': payload.notes || '',
+    'Märkus hinna kohta': payload.disclaimer || '',
+    'Avaliku kalendri tekst': payload.publicTitle || 'Ringitegevus',
+    'Kuvamise viis': payload.displayMode || 'category',
+    'Kinnitamise aeg': '',
+    'Kinnituskiri saadetud': ''
+  }
+
+  sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
+
+  MailApp.sendEmail({
+    to: DEFAULT_EMAIL,
+    subject: `Uus juhendaja sisestus: ${payload.collective || payload.name || ''}`,
+    htmlBody: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;"><h2>Uus juhendaja sisestus</h2><p><b>ID:</b> ${escapeHtml_(usageId)}</p><p><b>Kollektiiv:</b> ${escapeHtml_(payload.collective || '')}</p><p><b>Aeg:</b> ${escapeHtml_(payload.date || '')} ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p><p><b>Ruum:</b> ${escapeHtml_(payload.house || '')} / ${escapeHtml_(payload.roomName || '')}</p><p><b>Avaliku kalendri tekst:</b> ${escapeHtml_(payload.publicTitle || '')}</p><p>Sisesta Kultuuripesa töölauda ja kinnita või muuda kirje.</p></div>`,
+    name: ORGANIZATION_NAME
+  })
+
+  return { ok: true, bookingId: usageId, message: 'Sisestus saadeti kinnitamiseks.' }
+}
+
+function authInstructor_(email, pin) {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedPin = String(pin || '').trim()
+  if (!normalizedEmail || !normalizedPin) return { ok: false, error: 'E-post või PIN puudub.' }
+
+  const sheet = ensureInstructorSheet_()
+  const values = sheet.getDataRange().getValues()
+  const headers = values[0]
+  const map = headerMap_(headers)
+
+  for (let i = 1; i < values.length; i += 1) {
+    const row = values[i]
+    const active = String(row[map['Aktiivne']] || '').toLowerCase()
+    const rowEmail = String(row[map['E-post']] || '').trim().toLowerCase()
+    const rowPin = String(row[map['PIN']] || '').trim()
+    if (rowEmail === normalizedEmail && rowPin === normalizedPin && !['ei', 'false', '0'].includes(active)) {
+      return {
+        ok: true,
+        instructor: {
+          id: row[map['Juhendaja ID']] || '',
+          name: row[map['Nimi']] || '',
+          email: row[map['E-post']] || '',
+          collective: row[map['Kollektiiv']] || '',
+          house: row[map['Rahvamaja']] || '',
+          room: row[map['Ruum']] || '',
+          roomId: row[map['RoomID']] || '',
+          active: true
+        }
+      }
+    }
+  }
+
+  return { ok: false, error: 'Juhendajat ei leitud või PIN ei sobi.' }
+}
+
+function ensureInstructorSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID)
+  let sheet = ss.getSheetByName(INSTRUCTOR_SHEET_NAME)
+  if (!sheet) sheet = ss.insertSheet(INSTRUCTOR_SHEET_NAME)
+
+  const lastColumn = Math.max(sheet.getLastColumn(), 1)
+  const existing = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String) : []
+  if (existing.length === 0) {
+    sheet.getRange(1, 1, 1, INSTRUCTOR_HEADERS.length).setValues([INSTRUCTOR_HEADERS])
+    sheet.getRange(2, 1, DEFAULT_INSTRUCTORS.length, INSTRUCTOR_HEADERS.length).setValues(DEFAULT_INSTRUCTORS)
+    sheet.setFrozenRows(1)
+    return sheet
+  }
+
+  const headers = existing.slice()
+  INSTRUCTOR_HEADERS.forEach((header) => { if (!headers.includes(header)) headers.push(header) })
+  if (headers.length !== existing.length) sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  sheet.setFrozenRows(1)
+  return sheet
+}
+
+function createUsageId_() {
+  const now = new Date()
+  const datePart = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss')
+  const randomPart = Math.floor(Math.random() * 900 + 100)
+  return `JR-${datePart}-${randomPart}`
 }
 
 function updateStatus_(payload) {
@@ -219,6 +358,8 @@ function sheetRowToBooking_(row, rowNumber) {
     id: row['Broneeringu ID'] || '',
     type: row['Tüüp'] || 'broneering',
     status,
+    collective: row['Kollektiiv'] || '',
+    instructorId: row['Juhendaja ID'] || '',
     house: row['Rahvamaja'] || '',
     roomName: row['Ruum'] || '',
     room: row['Ruum'] || '',
