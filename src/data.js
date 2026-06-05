@@ -6,6 +6,33 @@ export const bookingSettings = {
   adminPin: '2026'
 }
 
+
+
+export const instructors = [
+  {
+    id: 'rahvatants-rannu',
+    name: 'Rahvatantsurühma juhendaja',
+    email: 'juhendaja@example.com',
+    pin: '4821',
+    collective: 'Rahvatants',
+    house: 'Rannu rahvamaja',
+    roomId: 'rannu-saal',
+    room: 'Suur saal',
+    active: true
+  },
+  {
+    id: 'kasitoo-konguta',
+    name: 'Käsitööringi juhendaja',
+    email: 'kasitoo@example.com',
+    pin: '7394',
+    collective: 'Käsitöö- ja loovtöötuba',
+    house: 'Konguta rahvamaja',
+    roomId: 'konguta-saal',
+    room: 'Saal',
+    active: true
+  }
+]
+
 export const initialEvents = [
   {
     id: 1,
