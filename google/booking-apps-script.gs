@@ -43,6 +43,10 @@ function doPost(e) {
       payload.date || '',
       payload.startTime || '',
       payload.endTime || '',
+      payload.reservedStartTime || '',
+      payload.reservedEndTime || '',
+      payload.bufferBeforeMinutes || '',
+      payload.bufferAfterMinutes || '',
       payload.hours || '',
       payload.eventType || '',
       payload.participants || '',
@@ -135,6 +139,10 @@ function ensureHeader_(sheet) {
     'Kuupäev',
     'Algus',
     'Lõpp',
+    'Ruum kinni alates',
+    'Ruum kinni kuni',
+    'Puhver enne (min)',
+    'Puhver pärast (min)',
     'Tunnid',
     'Sündmuse liik',
     'Osalejad',
@@ -208,6 +216,8 @@ function buildStaffEmailBody_(payload, bookingId) {
       <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
       <p><b>Kuupäev:</b> ${escapeHtml_(payload.date || '')}</p>
       <p><b>Kellaaeg:</b> ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
+      <p><b>Ruum hoitakse broneeringu ja puhvri jaoks kinni:</b> ${escapeHtml_(payload.reservedStartTime || payload.startTime || '')}–${escapeHtml_(payload.reservedEndTime || payload.endTime || '')}</p>
+      <p><b>Puhver:</b> ${escapeHtml_(String(payload.bufferBeforeMinutes || 0))} min enne ja ${escapeHtml_(String(payload.bufferAfterMinutes || 0))} min pärast</p>
       <p><b>Arvestuslik kestus:</b> ${escapeHtml_(String(payload.hours || ''))} h</p>
 
       <h3>Sündmuse info</h3>
@@ -219,12 +229,6 @@ function buildStaffEmailBody_(payload, bookingId) {
       <p><b>Nimi:</b> ${escapeHtml_(payload.name || '')}</p>
       <p><b>E-post:</b> ${escapeHtml_(payload.email || '')}</p>
       <p><b>Telefon:</b> ${escapeHtml_(payload.phone || '')}</p>
-
-      <h3>Rendi hinna sees</h3>
-      ${included}
-
-      <h3>Eraldi kokkuleppel</h3>
-      ${agreement}
 
       <h3>Rendi hinna sees</h3>
       ${included}
@@ -269,14 +273,9 @@ function buildClientEmailBody_(payload, bookingId) {
       <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
       <p><b>Kuupäev:</b> ${escapeHtml_(payload.date || '')}</p>
       <p><b>Kellaaeg:</b> ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
+      <p><b>Ruum hoitakse broneeringu ja puhvri jaoks kinni:</b> ${escapeHtml_(payload.reservedStartTime || payload.startTime || '')}–${escapeHtml_(payload.reservedEndTime || payload.endTime || '')}</p>
       <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
       <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
-
-      <h3>Rendi hinna sees</h3>
-      ${included}
-
-      <h3>Eraldi kokkuleppel</h3>
-      ${agreement}
 
       <h3>Rendi hinna sees</h3>
       ${included}
