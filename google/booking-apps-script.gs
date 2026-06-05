@@ -112,7 +112,7 @@ function createBooking_(payload) {
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
-  const bookingId = createBookingId_()
+  const bookingId = payload.bookingId || createBookingId_()
   const selectedServicesText = formatSelectedServicesForSheet_(payload.selectedServices)
 
   const rowObject = {
@@ -206,7 +206,7 @@ function listBookings_() {
     bookings.push(sheetRowToBooking_(row, i + 1))
   }
 
-  const usages = bookings.filter((item) => ['kinnitatud', 'published', 'avaldatud'].includes(String(item.status || '').toLowerCase()))
+  const usages = bookings.filter((item) => !['tühistatud', 'tuhistatud', 'cancelled'].includes(String(item.status || '').toLowerCase()))
   return { ok: true, bookings, usages }
 }
 
