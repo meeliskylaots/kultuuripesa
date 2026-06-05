@@ -792,7 +792,6 @@ function ContactView() {
 
 function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminPin, isAdminUnlocked, setIsAdminUnlocked, setInstructorSession }) {
   const [error, setError] = useState('')
-  const [instructorEmail, setInstructorEmail] = useState('')
   const [instructorPin, setInstructorPin] = useState('')
   const isInstructorRole = selectedRole === 'collective'
 
@@ -808,10 +807,14 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
 
   async function enterInstructor() {
     setError('')
-    const normalizedEmail = instructorEmail.trim().toLowerCase()
+    const normalizedPin = String(instructorPin || '').trim()
+    if (!normalizedPin) {
+      setError('Sisesta juhendaja PIN-kood.')
+      return
+    }
     try {
       if (bookingSettings.appsScriptUrl) {
-        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', email: normalizedEmail, pin: instructorPin })
+        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', pin: normalizedPin })
         if (data?.ok && data.instructor) {
           setInstructorSession(data.instructor)
           setView('instructor')
@@ -822,18 +825,18 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
       // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
     }
 
-    const local = instructors.find((item) => item.active && item.email.toLowerCase() === normalizedEmail && String(item.pin) === String(instructorPin))
+    const local = instructors.find((item) => item.active && String(item.pin) === normalizedPin)
     if (local) {
       setInstructorSession(local)
       setView('instructor')
     } else {
-      setError('E-post ja PIN ei klapi aktiivse juhendaja andmetega.')
+      setError('PIN-kood ei sobi aktiivse juhendaja andmetega.')
     }
   }
 
   return (
     <Page>
-      <SectionHeader eyebrow="Töötajale" title="Vali roll ja sisene töövaatesse" text="Vali kõigepealt oma roll. Juhataja ja administraator sisenevad üldise PIN-koodiga. Ringijuht või juhendaja sisestab oma e-posti ja isikliku PIN-i." />
+      <SectionHeader eyebrow="Töötajale" title="Vali roll ja sisene töövaatesse" text="Vali kõigepealt oma roll. Juhataja ja administraator sisenevad üldise PIN-koodiga. Ringijuht või juhendaja sisestab oma isikliku PIN-koodi." />
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-xl font-black">1. Vali roll</h2>
@@ -858,12 +861,11 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
             </>
           ) : (
             <>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Ringijuht või juhendaja sisestab oma e-posti ja isikliku PIN-i. Vorm avaneb ainult tema lubatud majade ja ruumide jaoks.</p>
-              <Field label="E-post" required><input type="email" className={inputClass} value={instructorEmail} onChange={(e) => setInstructorEmail(e.target.value)} placeholder="juhendaja@email.ee" /></Field>
-              <div className="mt-3"><Field label="Isiklik PIN" required><input type="password" className={inputClass} value={instructorPin} onChange={(e) => setInstructorPin(e.target.value)} placeholder="PIN" /></Field></div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Ringijuht või juhendaja sisestab oma isikliku PIN-koodi. Vorm avaneb ainult tema lubatud majade ja ruumide jaoks.</p>
+              <Field label="Isiklik PIN" required><input type="password" className={inputClass} value={instructorPin} onChange={(e) => setInstructorPin(e.target.value)} placeholder="PIN" /></Field>
               {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
               <button onClick={enterInstructor} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava juhendaja vorm</button>
-              <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis: juhendaja@example.com / 4821 või kasitoo@example.com / 7394.</p>
+              <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis-PIN-id: 4821 või 7394.</p>
             </>
           )}
         </section>
@@ -873,7 +875,6 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
 }
 
 function InstructorView({ events, activities, onUsageCreated, initialInstructor, clearInstructorSession }) {
-  const [email, setEmail] = useState('')
   const [pin, setPin] = useState('')
   const [authError, setAuthError] = useState('')
   const [instructor, setInstructor] = useState(null)
@@ -891,10 +892,14 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 
   async function authenticate() {
     setAuthError('')
-    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedPin = String(pin || '').trim()
+    if (!normalizedPin) {
+      setAuthError('Sisesta juhendaja PIN-kood.')
+      return
+    }
     try {
       if (bookingSettings.appsScriptUrl) {
-        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', email: normalizedEmail, pin })
+        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', pin: normalizedPin })
         if (data?.ok && data.instructor) {
           enterInstructor(data.instructor)
           return
@@ -904,11 +909,11 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
       // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
     }
 
-    const local = instructors.find((item) => item.active && item.email.toLowerCase() === normalizedEmail && String(item.pin) === String(pin))
+    const local = instructors.find((item) => item.active && String(item.pin) === normalizedPin)
     if (local) {
       enterInstructor(local)
     } else {
-      setAuthError('E-post ja PIN ei klapi aktiivse juhendaja andmetega.')
+      setAuthError('PIN-kood ei sobi aktiivse juhendaja andmetega.')
     }
   }
 
@@ -944,11 +949,10 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
       <Page>
         <SectionHeader eyebrow="Juhendajale" title="Sisesta kollektiivi tegevus või prooviaja muudatus" text="Juhendaja ei avalda infot otse. Sisestus liigub juhatajale või administraatorile kinnitamiseks ning alles pärast kinnitamist ilmub see avalikku kalendrisse ja hakkab ruumi blokeerima." />
         <section className="max-w-xl rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <Field label="E-post" required><input type="email" className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="juhendaja@email.ee" /></Field>
-          <div className="mt-3"><Field label="Isiklik PIN" required><input type="password" className={inputClass} value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN" /></Field></div>
+          <Field label="Isiklik PIN" required><input type="password" className={inputClass} value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN" /></Field>
           {authError && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{authError}</p>}
           <button onClick={authenticate} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava vorm</button>
-          <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis: juhendaja@example.com / 4821 või kasitoo@example.com / 7394. Päris kasutuses määrab PIN-id juhataja.</p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis-PIN-id: 4821 või 7394. Päris kasutuses määrab PIN-id juhataja.</p>
         </section>
       </Page>
     )
