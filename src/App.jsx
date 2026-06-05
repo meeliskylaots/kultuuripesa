@@ -15,7 +15,7 @@ import {
 const VIEW_LABELS = {
   home: 'Avaleht',
   events: 'Sündmused',
-  availability: 'Vabad ajad',
+  availability: 'Ruumid',
   booking: 'Broneeri',
   activities: 'Ringid',
   houses: 'Rahvamajad',
@@ -271,7 +271,7 @@ function getFreeSlots(items) {
 function Header({ view, setView }) {
   const nav = [
     ['events', 'Sündmused'],
-    ['availability', 'Vabad ajad'],
+    ['availability', 'Ruumid'],
     ['activities', 'Ringid'],
     ['contact', 'Kontakt']
   ]
@@ -354,16 +354,16 @@ function HomeView({ setView, events }) {
       <section className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
         <div>
           <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast</p>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Leia sündmused, vabad ajad ja ruumid kiiresti.</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vali kiiresti, kas soovid sündmusi vaadata, ruumi vaba aega kontrollida või broneeringusooviga alustada.</p>
+          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Rannu ja Konguta kultuurielu ühest kohast.</h1>
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vaata sündmusi, broneeri rahvamaja ruume ja leia üles kohalikud ringid, kollektiivid ning kogukonnategevused.</p>
         </div>
         <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
           <div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-100 via-white to-amber-50 p-5">
             <h2 className="mb-4 text-xl font-black">Mida soovid teha?</h2>
             <div className="grid gap-3">
               <button onClick={() => setView('events')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Vaadata sündmusi</b><span className="block text-sm text-slate-500">Kontserdid, töötoad ja kogukonnaüritused</span></span><span>→</span></button>
-              <button onClick={() => setView('availability')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Kontrollida ruumi vaba aega</b><span className="block text-sm text-slate-500">Näed hõivatud ja vabu aegu</span></span><span>→</span></button>
-              <button onClick={() => setView('availability')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Broneerida ruum</b><span className="block text-sm text-slate-500">Alusta ruumi ja vaba aja valikust</span></span><span>→</span></button>
+              <button onClick={() => setView('availability')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Broneerida ruum</b><span className="block text-sm text-slate-500">Vali ruum, vaata vaba aega ja saada broneeringusoov</span></span><span>→</span></button>
+              <button onClick={() => setView('activities')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Kohalik kultuurielu</b><span className="block text-sm text-slate-500">Ringid, kollektiivid ja rahvamajade tegemised</span></span><span>→</span></button>
             </div>
           </div>
         </div>
