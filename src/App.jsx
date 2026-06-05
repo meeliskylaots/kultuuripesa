@@ -80,6 +80,8 @@ function formatEuro(value) {
 }
 
 function getPublicTitle(item) {
+  const status = normalizeStatusForCalendar(item.status)
+  if (status === 'pending') return 'Broneeritud (ootab kinnitamist)'
   if (item.displayMode === 'neutral') return item.publicTitle || 'Ruum broneeritud'
   if (item.displayMode === 'category') return item.publicTitle || item.category || 'Rahvamaja kasutuses'
   return item.publicTitle || item.title
@@ -103,14 +105,16 @@ function roomIdFromHouseAndRoom(house, roomName) {
 function normalizeStatusForCalendar(status) {
   const value = String(status || '').toLowerCase().trim()
   if (['kinnitatud', 'published', 'avaldatud'].includes(value)) return 'published'
+  if (['ootel', 'pending', 'küsitav', 'kusitav'].includes(value)) return 'pending'
   if (['tühistatud', 'tuhistatud', 'cancelled'].includes(value)) return 'cancelled'
-  return value || 'ootel'
+  return value || 'pending'
 }
 
 function bookingToCalendarEvent(item) {
   const roomId = item.roomId || roomIdFromHouseAndRoom(item.house, item.roomName || item.room)
   const room = getRoomById(roomId)
-  const publicTitle = item.publicTitle || item.calendarText || (item.publicEvent ? (item.eventType || 'Avalik sündmus') : 'Ruum broneeritud')
+  const normalizedStatus = normalizeStatusForCalendar(item.status)
+  const publicTitle = normalizedStatus === 'pending' ? 'Broneeritud (ootab kinnitamist)' : (item.publicTitle || item.calendarText || (item.publicEvent ? (item.eventType || 'Avalik sündmus') : 'Ruum broneeritud'))
   return {
     id: item.id || item.bookingId || `sheet-${item.rowNumber || Math.random()}`,
     title: item.internalTitle || item.eventType || 'Broneering',
@@ -132,7 +136,7 @@ function bookingToCalendarEvent(item) {
     registration: false,
     public: true,
     blocksRoom: true,
-    status: normalizeStatusForCalendar(item.status),
+    status: normalizedStatus,
     tech: '',
     owner: item.name || 'Klient',
     description: item.publicEvent ? (item.notes || 'Avalik sündmus rahvamajas.') : 'Rahvamaja ruum on sel ajal broneeritud.',
@@ -173,10 +177,10 @@ async function postToAppsScript(payload) {
 
 function getBlockingItems(events, activities) {
   const eventItems = events
-    .filter((item) => item.blocksRoom && ['published', 'kinnitatud'].includes(item.status))
+    .filter((item) => item.blocksRoom && ['published', 'kinnitatud', 'pending', 'ootel'].includes(normalizeStatusForCalendar(item.status)))
     .map((item) => ({ ...item, sourceType: 'event' }))
   const activityItems = activities
-    .filter((item) => item.blocksRoom && ['published', 'kinnitatud'].includes(item.status))
+    .filter((item) => item.blocksRoom && ['published', 'kinnitatud', 'pending', 'ootel'].includes(normalizeStatusForCalendar(item.status)))
     .map((item) => ({ ...item, sourceType: 'activity', category: 'Ringitegevus', price: '' }))
   return [...eventItems, ...activityItems]
 }
@@ -473,17 +477,20 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
           const items = getRoomDayItems(roomId, dateISO, events, activities)
           const isSelected = dateISO === selectedDate
           const day = Number(dateISO.slice(-2))
+          const hasPending = items.some((item) => normalizeStatusForCalendar(item.status) === 'pending')
+          const hasConfirmed = items.some((item) => normalizeStatusForCalendar(item.status) === 'published')
           return (
-            <button key={dateISO} onClick={() => setSelectedDate(dateISO)} className={cx('min-h-16 rounded-xl p-2 text-left ring-1 transition', isSelected ? 'bg-emerald-700 text-white ring-emerald-700' : items.length ? 'bg-slate-100 text-slate-900 ring-slate-200 hover:bg-slate-200' : 'bg-white text-slate-900 ring-slate-200 hover:bg-emerald-50')}>
+            <button key={dateISO} onClick={() => setSelectedDate(dateISO)} className={cx('min-h-16 rounded-xl p-2 text-left ring-1 transition', isSelected ? 'bg-emerald-700 text-white ring-emerald-700' : hasConfirmed ? 'bg-slate-200 text-slate-900 ring-slate-300 hover:bg-slate-300' : hasPending ? 'bg-amber-50 text-slate-900 ring-amber-200 hover:bg-amber-100' : 'bg-white text-slate-900 ring-slate-200 hover:bg-emerald-50')}>
               <span className="text-sm font-black">{day}</span>
-              {items.length > 0 && <span className={cx('mt-2 block rounded-full px-2 py-1 text-[10px] font-black', isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700')}>{items.length} kasutus</span>}
+              {items.length > 0 && <span className={cx('mt-2 block rounded-full px-2 py-1 text-[10px] font-black', isSelected ? 'bg-white/20 text-white' : hasPending ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700')}>{hasPending ? 'ootel' : `${items.length} kasutus`}</span>}
             </button>
           )
         })}
       </div>
       <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-white ring-1 ring-slate-200" /> vaba</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-100 ring-1 ring-slate-200" /> kasutuses</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-amber-50 ring-1 ring-amber-200" /> ootab kinnitamist</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-200 ring-1 ring-slate-300" /> kinnitatud kasutus</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-700" /> valitud</span>
       </div>
     </div>
@@ -569,7 +576,8 @@ function AvailabilityPanel({ events, activities, roomId, dateISO }) {
           <div className="space-y-2">
             {items.map((item) => {
               const buffer = getBufferedRange(item)
-              return <div key={`${item.sourceType}-${item.id}`} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><p className="font-black">{getPublicTitle(item)}</p><p className="mt-1 text-sm text-slate-600">Tegelik aeg: {item.startTime}–{item.endTime}</p><p className="mt-1 text-sm font-bold text-slate-900">Broneerimiseks suletud: {minutesToTime(buffer.start)}–{minutesToTime(buffer.end)}</p></div>
+              const status = normalizeStatusForCalendar(item.status)
+              return <div key={`${item.sourceType}-${item.id}`} className={cx('rounded-2xl p-4 ring-1', status === 'pending' ? 'bg-amber-50 ring-amber-200' : 'bg-slate-50 ring-slate-200')}><div className="flex items-start justify-between gap-3"><p className="font-black">{getPublicTitle(item)}</p><span className={cx('rounded-full px-2 py-1 text-[10px] font-black uppercase', status === 'pending' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900')}>{status === 'pending' ? 'ootab kinnitamist' : 'kinnitatud'}</span></div><p className="mt-1 text-sm text-slate-600">Tegelik aeg: {item.startTime}–{item.endTime}</p><p className="mt-1 text-sm font-bold text-slate-900">Broneerimiseks suletud koos puhvriga: {minutesToTime(buffer.start)}–{minutesToTime(buffer.end)}</p></div>
             })}
           </div>
         </div>
@@ -601,7 +609,7 @@ function StepBadge({ step, current, label }) {
   return <div className={cx('rounded-2xl px-3 py-2 text-xs font-black ring-1', step === current ? 'bg-emerald-700 text-white ring-emerald-700' : step < current ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-white text-slate-500 ring-slate-200')}>{step}. {label}</div>
 }
 
-function BookingView({ events, activities, initialDraft }) {
+function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   const [step, setStep] = useState(initialDraft ? 2 : 1)
   const [form, setForm] = useState({
     roomId: initialDraft?.roomId || rentalRooms[0].id,
@@ -634,8 +642,10 @@ function BookingView({ events, activities, initialDraft }) {
   }
 
   async function submitBooking() {
+    const clientBookingId = `BR-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`
     const payload = {
       action: 'createBooking',
+      bookingId: clientBookingId,
       roomId: room.id,
       type: 'broneering',
       status: 'ootel',
@@ -671,7 +681,8 @@ function BookingView({ events, activities, initialDraft }) {
     if (bookingSettings.appsScriptUrl) {
       try {
         await postToAppsScript(payload)
-        setSubmitMessage('Broneeringusoov saadeti. See ilmub töötaja vaatesse staatusega “ootel”.')
+        onBookingCreated?.({ ...payload, id: clientBookingId, bookingId: clientBookingId, status: 'ootel', calendarText: payload.publicTitle })
+        setSubmitMessage('Broneeringusoov saadeti. See on avalikus kalendris märgitud kui “ootab kinnitamist” ja töötaja vaates ootel.')
       } catch (error) {
         setSubmitMessage('Saatmine ei õnnestunud. Palun proovi uuesti või võta rahvamajaga ühendust.')
       }
@@ -697,7 +708,7 @@ function BookingView({ events, activities, initialDraft }) {
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-6">
           {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
           {step === 2 && <BookingStepEvent form={form} setForm={setForm} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
-          {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} selectedServices={selectedServices} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
+          {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} selectedServices={selectedServices} servicesTotal={servicesTotal} estimatedTotal={estimatedTotal} roomCost={roomCost} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
           {step === 4 && <BookingStepContact form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
         </section>
       </div>
@@ -719,8 +730,38 @@ function BookingStepEvent({ form, setForm, onBack, onNext }) {
   return <div><h2 className="text-2xl font-black">2. Sündmuse info</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Sündmuse liik" required><select className={inputClass} value={form.eventType} onChange={(e) => setForm({ ...form, eventType: e.target.value })}><option value="">Vali liik</option>{EVENT_TYPE_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Osalejate arv" required><input className={inputClass} value={form.participants} onChange={(e) => setForm({ ...form, participants: e.target.value })} placeholder="nt 40" /></Field><label className="md:col-span-2 flex items-start gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.publicEvent} onChange={(e) => setForm({ ...form, publicEvent: e.target.checked })} className="mt-1" /><span><b>Soovin, et sündmus oleks avalikus kalendris detailidega nähtav.</b><span className="block text-sm text-slate-600">Kui mitte, kuvatakse kasutuskalendris neutraalne tekst, näiteks “Ruum broneeritud”.</span></span></label><Field label="Lisainfo"><textarea className={`${inputClass} min-h-[110px] md:col-span-2`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Kirjelda lisasoove, tehnilisi vajadusi või muid olulisi asjaolusid." /></Field></div><div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Jätka</button></div></div>
 }
 
-function BookingStepServices({ form, room, toggleService, selectedServices, onBack, onNext }) {
-  return <div><h2 className="text-2xl font-black">3. Teenused ja hind</h2><div className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><h3 className="font-black">{room.house} · {room.name}</h3><p className="mt-1 text-sm text-slate-600">{room.description}</p><div className="mt-4"><p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Rendi hinna sees</p><div className="flex flex-wrap gap-2">{room.included.map((item) => <Pill key={item}>{item}</Pill>)}</div></div><div className="mt-4"><p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Eraldi kokkuleppel</p><div className="flex flex-wrap gap-2">{room.agreement.map((item) => <Pill key={item}>{item}</Pill>)}</div></div></div><div className="mt-5 grid gap-3 md:grid-cols-2">{rentalServices.map((service) => <label key={service.id} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 hover:bg-slate-50"><input type="checkbox" checked={form.services.includes(service.id)} onChange={() => toggleService(service.id)} className="mt-1" /><span><b>{service.label}</b><span className="block text-sm text-slate-600">{service.description}</span><span className="mt-2 block text-sm font-black text-emerald-700">{service.pricing === 'hourly' ? `${formatEuro(service.price)} / h` : formatEuro(service.price)}</span></span></label>)}</div><div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Jätka</button></div></div>
+function BookingStepServices({ form, room, toggleService, selectedServices, servicesTotal, estimatedTotal, roomCost, onBack, onNext }) {
+  return (
+    <div>
+      <h2 className="text-2xl font-black">3. Teenused ja hind</h2>
+      <div className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+        <h3 className="font-black">{room.house} · {room.name}</h3>
+        <p className="mt-1 text-sm text-slate-600">{room.description}</p>
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Rendi hinna sees</p>
+          <div className="flex flex-wrap gap-2">{room.included.map((item) => <Pill key={item}>{item}</Pill>)}</div>
+        </div>
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Eraldi kokkuleppel</p>
+          <div className="flex flex-wrap gap-2">{room.agreement.map((item) => <Pill key={item}>{item}</Pill>)}</div>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        {rentalServices.map((service) => <label key={service.id} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 hover:bg-slate-50"><input type="checkbox" checked={form.services.includes(service.id)} onChange={() => toggleService(service.id)} className="mt-1" /><span><b>{service.label}</b><span className="block text-sm text-slate-600">{service.description}</span><span className="mt-2 block text-sm font-black text-emerald-700">{service.pricing === 'hourly' ? `${formatEuro(service.price)} / h` : formatEuro(service.price)}</span></span></label>)}
+      </div>
+      <div className="mt-5 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
+        <h3 className="text-lg font-black text-emerald-950">Hinnakokkuvõte</h3>
+        <div className="mt-3 space-y-2 text-sm text-emerald-950">
+          <div className="flex justify-between gap-3"><span>Ruumi kasutus</span><b>{formatEuro(roomCost)}</b></div>
+          <div className="flex justify-between gap-3"><span>Koristus ja ettevalmistus</span><b>hinnas</b></div>
+          {selectedServices.length ? selectedServices.map((service) => <div key={service.id} className="flex justify-between gap-3"><span>{service.label}</span><b>{formatEuro(service.total)}</b></div>) : <div className="flex justify-between gap-3"><span>Valitud lisateenused</span><b>{formatEuro(0)}</b></div>}
+          <div className="flex justify-between gap-3 border-t border-emerald-200 pt-3 text-base"><span className="font-black">Teenused kokku</span><b>{formatEuro(servicesTotal)}</b></div>
+          <div className="flex justify-between gap-3 text-xl"><span className="font-black">Kogusumma</span><b>{formatEuro(estimatedTotal)}</b></div>
+        </div>
+      </div>
+      <div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Jätka</button></div>
+    </div>
+  )
 }
 
 function BookingStepContact({ form, setForm, onBack, onSubmit, submitMessage }) {
@@ -800,7 +841,7 @@ function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle })
           <input className={inputClass} value={booking.publicTitle || 'Ruum broneeritud'} onChange={(e) => onUpdatePublicTitle(booking.bookingId || booking.id, e.target.value)} />
         </Field>
         <div className="flex flex-wrap gap-2">
-          {booking.status === 'ootel' && <button onClick={() => onApprove(booking)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Kinnita</button>}
+          {normalizeStatusForCalendar(booking.status) === 'pending' && <button onClick={() => onApprove(booking)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Kinnita</button>}
           <button onClick={() => onCancel(booking)} className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-black text-rose-800 ring-1 ring-rose-100 hover:bg-rose-100">Tühista</button>
         </div>
       </div>
@@ -811,8 +852,8 @@ function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle })
 
 function AdminView({ setView, selectedRole, events, activities, bookings, setBookings, refreshData, setSheetUsages }) {
   const role = roles.find((r) => r.id === selectedRole)
-  const pending = bookings.filter((item) => item.status === 'ootel')
-  const confirmed = bookings.filter((item) => item.status === 'kinnitatud' || item.status === 'published')
+  const pending = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'pending')
+  const confirmed = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'published')
   const [tab, setTab] = useState('pending')
   const visible = tab === 'pending' ? pending : confirmed
 
@@ -894,7 +935,7 @@ export default function App() {
       if (data?.ok) {
         setBookings(data.bookings || [])
         setSheetUsages(data.usages || [])
-        setDataStatus(`Andmed laaditud: ${(data.usages || []).length} kinnitatud ja ${(data.bookings || []).filter(item => item.status === 'ootel').length} ootel broneeringut.`)
+        setDataStatus(`Andmed laaditud: ${(data.usages || []).filter(item => normalizeStatusForCalendar(item.status) === 'published').length} kinnitatud ja ${(data.bookings || []).filter(item => normalizeStatusForCalendar(item.status) === 'pending').length} ootel broneeringut.`)
       } else {
         setDataStatus('Google Sheetist andmete laadimine ei õnnestunud, kasutatakse näidisandmeid.')
       }
@@ -907,7 +948,31 @@ export default function App() {
     refreshData()
   }, [])
 
-  const sheetEvents = useMemo(() => sheetUsages.map(bookingToCalendarEvent).filter((item) => item.status === 'published'), [sheetUsages])
+  useEffect(() => {
+    if (view === 'admin' && isAdminUnlocked) refreshData()
+  }, [view, isAdminUnlocked])
+
+  function handleBookingCreated(booking) {
+    setBookings((current) => {
+      const exists = current.some((item) => String(item.bookingId || item.id) === String(booking.bookingId || booking.id))
+      return exists ? current : [{ ...booking, publicTitle: booking.publicTitle || 'Broneeritud (ootab kinnitamist)' }, ...current]
+    })
+    setSheetUsages((current) => {
+      const exists = current.some((item) => String(item.bookingId || item.id) === String(booking.bookingId || booking.id))
+      return exists ? current : [{ ...booking, publicTitle: booking.publicTitle || 'Broneeritud (ootab kinnitamist)' }, ...current]
+    })
+  }
+
+  const combinedSheetUsages = useMemo(() => {
+    const map = new Map()
+    ;[...sheetUsages, ...bookings.filter((item) => ['ootel', 'pending', 'kinnitatud', 'published'].includes(String(item.status || '').toLowerCase()))].forEach((item) => {
+      const key = String(item.bookingId || item.id || `${item.roomId}-${item.dateISO || item.date}-${item.startTime}-${item.endTime}`)
+      if (!map.has(key)) map.set(key, item)
+      else map.set(key, { ...map.get(key), ...item })
+    })
+    return Array.from(map.values())
+  }, [sheetUsages, bookings])
+  const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
   const events = useMemo(() => [...initialEvents, ...sheetEvents], [sheetEvents])
   const activities = initialActivities
 
@@ -919,7 +984,7 @@ export default function App() {
       {view === 'events' && <EventsView events={events} />}
       {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
-      {view === 'booking' && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} />}
+      {view === 'booking' && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
