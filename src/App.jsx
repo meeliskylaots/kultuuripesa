@@ -790,8 +790,11 @@ function ContactView() {
   return <Page><SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta või helista, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." /><div className="grid gap-5 md:grid-cols-3">{['Üldkontakt', 'Rannu rahvamaja', 'Konguta rahvamaja'].map((title, index) => <div key={title} className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{title}</h3><p className="mt-3 text-slate-600">{index === 0 ? 'kultuur@elva.ee' : index === 1 ? 'Rannu alevik' : 'Annikoru küla'}</p><p className="mt-1 text-slate-600">+372 0000 0000</p><div className="mt-5 flex flex-wrap gap-2"><a href="tel:+37200000000" className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white">Helista</a><a href="mailto:kultuur@elva.ee" className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-800">Kirjuta</a></div></div>)}</div></Page>
 }
 
-function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminPin, isAdminUnlocked, setIsAdminUnlocked }) {
+function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminPin, isAdminUnlocked, setIsAdminUnlocked, setInstructorSession }) {
   const [error, setError] = useState('')
+  const [instructorEmail, setInstructorEmail] = useState('')
+  const [instructorPin, setInstructorPin] = useState('')
+  const isInstructorRole = selectedRole === 'collective'
 
   function enterAdmin() {
     if (adminPin === bookingSettings.adminPin) {
@@ -803,44 +806,73 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
     }
   }
 
+  async function enterInstructor() {
+    setError('')
+    const normalizedEmail = instructorEmail.trim().toLowerCase()
+    try {
+      if (bookingSettings.appsScriptUrl) {
+        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', email: normalizedEmail, pin: instructorPin })
+        if (data?.ok && data.instructor) {
+          setInstructorSession(data.instructor)
+          setView('instructor')
+          return
+        }
+      }
+    } catch (error) {
+      // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
+    }
+
+    const local = instructors.find((item) => item.active && item.email.toLowerCase() === normalizedEmail && String(item.pin) === String(instructorPin))
+    if (local) {
+      setInstructorSession(local)
+      setView('instructor')
+    } else {
+      setError('E-post ja PIN ei klapi aktiivse juhendaja andmetega.')
+    }
+  }
+
   return (
     <Page>
-      <SectionHeader eyebrow="Töötajale" title="Sisene PIN-koodiga töövaatesse" text="Piloodis kasutame lihtsat PIN-koodi. Juhataja ja administraator saavad broneeringuid kinnitada ning avaliku kalendri teksti muuta." />
+      <SectionHeader eyebrow="Töötajale" title="Vali roll ja sisene töövaatesse" text="Vali kõigepealt oma roll. Juhataja ja administraator sisenevad üldise PIN-koodiga. Ringijuht või juhendaja sisestab oma e-posti ja isikliku PIN-i." />
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-xl font-black">1. Vali roll</h2>
           <div className="mt-4 grid gap-3">
-            {roles.filter(role => ['director', 'admin'].includes(role.id)).map(role => (
-              <button key={role.id} onClick={() => setSelectedRole(role.id)} className={cx('rounded-2xl p-5 text-left ring-1', selectedRole === role.id ? 'bg-emerald-50 ring-emerald-200' : 'bg-white ring-slate-200')}>
-                <h3 className="font-black">{role.label}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{role.description}</p>
+            {roles.filter(role => ['director', 'admin', 'collective'].includes(role.id)).map(role => (
+              <button key={role.id} onClick={() => { setSelectedRole(role.id); setError('') }} className={cx('rounded-2xl p-5 text-left ring-1', selectedRole === role.id ? 'bg-emerald-50 ring-emerald-200' : 'bg-white ring-slate-200')}>
+                <h3 className="font-black">{role.id === 'collective' ? 'Ringijuht / kollektiivijuht' : role.label}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{role.id === 'collective' ? 'Esitab proovide, lisaproovide või sündmuste muudatusi juhatajale kinnitamiseks.' : role.description}</p>
               </button>
             ))}
           </div>
         </section>
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-black">2. Sisesta PIN</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Vaikimisi PIN on prototüübis <b>2026</b>. Hiljem saab selle muuta Apps Scripti või seadete kaudu.</p>
-          <input value={adminPin} onChange={(e) => setAdminPin(e.target.value)} type="password" className="mt-4 w-full rounded-xl bg-slate-50 px-4 py-3 text-lg font-black tracking-widest outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="PIN" />
-          {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
-          <button onClick={enterAdmin} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava töölaud</button>
-          {isAdminUnlocked && <button onClick={() => setView('admin')} className="mt-3 w-full rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Mine tagasi töölauda</button>}
+          <h2 className="text-xl font-black">2. Sisene</h2>
+          {!isInstructorRole ? (
+            <>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Juhataja ja administraator sisenevad PIN-koodiga. Vaikimisi PIN on prototüübis <b>2026</b>.</p>
+              <input value={adminPin} onChange={(e) => setAdminPin(e.target.value)} type="password" className="mt-4 w-full rounded-xl bg-slate-50 px-4 py-3 text-lg font-black tracking-widest outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="PIN" />
+              {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
+              <button onClick={enterAdmin} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava töölaud</button>
+              {isAdminUnlocked && <button onClick={() => setView('admin')} className="mt-3 w-full rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Mine tagasi töölauda</button>}
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Ringijuht või juhendaja sisestab oma e-posti ja isikliku PIN-i. Vorm avaneb ainult tema lubatud majade ja ruumide jaoks.</p>
+              <Field label="E-post" required><input type="email" className={inputClass} value={instructorEmail} onChange={(e) => setInstructorEmail(e.target.value)} placeholder="juhendaja@email.ee" /></Field>
+              <div className="mt-3"><Field label="Isiklik PIN" required><input type="password" className={inputClass} value={instructorPin} onChange={(e) => setInstructorPin(e.target.value)} placeholder="PIN" /></Field></div>
+              {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
+              <button onClick={enterInstructor} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava juhendaja vorm</button>
+              <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis: juhendaja@example.com / 4821 või kasitoo@example.com / 7394.</p>
+            </>
+          )}
         </section>
       </div>
-      <section className="mt-6 rounded-[1.5rem] bg-emerald-50 p-5 ring-1 ring-emerald-100">
-        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-xl font-black text-slate-950">Juhendaja või kollektiivijuht</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-700">Sisesta oma e-post ja isiklik PIN, et esitada proovide, lisaproovide või sündmuste muudatusi juhatajale kinnitamiseks.</p>
-          </div>
-          <button onClick={() => setView('instructor')} className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava juhendaja vorm</button>
-        </div>
-      </section>
     </Page>
   )
 }
 
-function InstructorView({ events, activities, onUsageCreated }) {
+function InstructorView({ events, activities, onUsageCreated, initialInstructor, clearInstructorSession }) {
   const [email, setEmail] = useState('')
   const [pin, setPin] = useState('')
   const [authError, setAuthError] = useState('')
@@ -885,6 +917,7 @@ function InstructorView({ events, activities, onUsageCreated }) {
     setSelectedRoomId('')
     setPin('')
     setMessage('')
+    clearInstructorSession?.()
   }
 
   function allowedRoomsFor(activeInstructor) {
@@ -899,6 +932,12 @@ function InstructorView({ events, activities, onUsageCreated }) {
     setSelectedRoomId(firstRoom.id)
     setForm((current) => ({ ...current, publicTitle: activeInstructor.collective || '', date: current.date || '2026-06-09' }))
   }
+
+  useEffect(() => {
+    if (initialInstructor && !instructor) {
+      enterInstructor(initialInstructor)
+    }
+  }, [initialInstructor?.id])
 
   if (!instructor) {
     return (
@@ -1098,6 +1137,7 @@ export default function App() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false)
   const [sheetUsages, setSheetUsages] = useState([])
   const [bookings, setBookings] = useState([])
+  const [instructorSession, setInstructorSession] = useState(null)
   const [dataStatus, setDataStatus] = useState('Andmeid ei ole veel laaditud.')
 
   async function refreshData() {
@@ -1175,9 +1215,9 @@ export default function App() {
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
-      {view === 'instructor' && <InstructorView events={events} activities={activities} onUsageCreated={handleUsageCreated} />}
-      {view === 'login' && <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} />}
-      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={selectedRole} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} />)}
+      {view === 'instructor' && <InstructorView events={events} activities={activities} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
+      {view === 'login' && <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
+      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={selectedRole} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
       <MobileNav view={view} setView={setView} />
     </div>
   )
