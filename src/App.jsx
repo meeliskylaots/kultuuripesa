@@ -348,7 +348,7 @@ function ActionCard({ title, text, icon, onClick }) {
   )
 }
 
-function HomeView({ setView, events }) {
+function HomeView({ setView, events, openEventDetails }) {
   const upcoming = events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full').slice(0, 3)
   return (
     <Page>
@@ -378,7 +378,7 @@ function HomeView({ setView, events }) {
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-200">Vaata kõiki</button>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          {upcoming.map((event) => <EventCard key={event.id} event={event} compact />)}
+          {upcoming.map((event) => <EventCard key={event.id} event={event} compact onDetails={openEventDetails} />)}
         </div>
       </section>
     </Page>
@@ -389,7 +389,7 @@ function Pill({ children }) {
   return <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{children}</span>
 }
 
-function EventCard({ event, compact = false }) {
+function EventCard({ event, compact = false, onDetails }) {
   const badge = dateBadge(event.dateISO)
   return (
     <article className="overflow-hidden rounded-[1.5rem] bg-white shadow-sm ring-1 ring-slate-200">
@@ -407,13 +407,13 @@ function EventCard({ event, compact = false }) {
         <h3 className="text-xl font-black leading-tight text-slate-950">{getPublicTitle(event)}</h3>
         <p className="mt-2 text-sm font-bold text-slate-500">{event.weekday} · {event.startTime}–{event.endTime}</p>
         {!compact && <p className="mt-3 text-sm leading-6 text-slate-600">{event.description}</p>}
-        <button className="mt-5 rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Vaata lähemalt</button>
+        <button onClick={() => onDetails?.(event)} className="mt-5 rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Vaata lähemalt</button>
       </div>
     </article>
   )
 }
 
-function EventsView({ events }) {
+function EventsView({ events, openEventDetails }) {
   const [filter, setFilter] = useState('Kõik')
   const [query, setQuery] = useState('')
   const publicEvents = events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full')
@@ -430,7 +430,69 @@ function EventsView({ events }) {
         <div className="w-full rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 md:max-w-sm"><label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">Otsi</label><input value={query} onChange={(e) => setQuery(e.target.value)} className="w-full bg-transparent text-sm outline-none" placeholder="Näiteks peredele, kontsert, Rannu..." /></div>
       </div>
       <div className="mb-6 flex gap-2 overflow-x-auto pb-2">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', filter === item ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200')}>{item}</button>)}</div>
-      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{filtered.map((event) => <EventCard key={event.id} event={event} />)}</div>
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{filtered.map((event) => <EventCard key={event.id} event={event} onDetails={openEventDetails} />)}</div>
+    </Page>
+  )
+}
+
+
+function EventDetailView({ event, setView, setSelectedRoomId }) {
+  if (!event) {
+    return (
+      <Page>
+        <SectionHeader eyebrow="Sündmus" title="Sündmust ei leitud" text="Valitud sündmuse infot ei õnnestunud kuvada." />
+        <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi sündmuste juurde</button>
+      </Page>
+    )
+  }
+
+  const room = getRoomById(event.roomId)
+  const title = getPublicTitle(event)
+  const canBookRoom = event.roomId && room
+
+  return (
+    <Page>
+      <button onClick={() => setView('events')} className="mb-5 rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">← Tagasi sündmuste juurde</button>
+      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[2rem] bg-white p-6 shadow-sm ring-1 ring-slate-200 md:p-8">
+          <div className="mb-5 flex flex-wrap gap-2">
+            <Pill>{event.house?.replace(' rahvamaja', '')}</Pill>
+            <Pill>{event.audience || 'Kõigile'}</Pill>
+            {event.category && <Pill>{event.category}</Pill>}
+            {event.price && <Pill>{event.price}</Pill>}
+            {event.registration && <Pill>registreerimisega</Pill>}
+          </div>
+          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">{title}</h1>
+          <p className="mt-4 text-lg font-bold text-slate-600">{event.weekday} · {event.date || event.dateISO} · {event.startTime}–{event.endTime}</p>
+          <p className="mt-6 text-base leading-8 text-slate-700">{event.description || 'Lisainfo täpsustamisel.'}</p>
+
+          <div className="mt-8 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Koht</p>
+              <p className="mt-1 text-lg font-black text-slate-950">{event.house}</p>
+              <p className="text-sm font-bold text-slate-500">{event.room || room?.name}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Tehnika / vajadused</p>
+              <p className="mt-1 text-sm font-bold text-slate-700">{event.tech || 'Ei ole märgitud'}</p>
+            </div>
+          </div>
+        </div>
+
+        <aside className="rounded-[2rem] bg-gradient-to-br from-emerald-50 via-white to-amber-50 p-6 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-2xl font-black text-slate-950">Sündmuse info</h2>
+          <div className="mt-5 space-y-3 text-sm text-slate-700">
+            <p><b>Aeg:</b> {event.startTime}–{event.endTime}</p>
+            <p><b>Rahvamaja:</b> {event.house}</p>
+            <p><b>Ruum:</b> {event.room || room?.name}</p>
+            <p><b>Sihtrühm:</b> {event.audience || 'Kõigile'}</p>
+            <p><b>Osalemine:</b> {event.price || 'Täpsustamisel'}</p>
+            <p><b>Registreerimine:</b> {event.registration ? 'vajalik' : 'ei ole vajalik'}</p>
+          </div>
+          {event.registration && <button className="mt-6 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Registreeri / küsi lisa</button>}
+          {canBookRoom && <button onClick={() => { setSelectedRoomId(event.roomId); setView('roomDetail') }} className="mt-3 w-full rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">Vaata selle ruumi kalendrit</button>}
+        </aside>
+      </section>
     </Page>
   )
 }
@@ -1136,6 +1198,7 @@ export default function App() {
   const [view, setView] = useState('home')
   const [selectedRole, setSelectedRole] = useState('director')
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
+  const [selectedEventId, setSelectedEventId] = useState(null)
   const [bookingDraft, setBookingDraft] = useState(null)
   const [adminPin, setAdminPin] = useState('')
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false)
@@ -1206,13 +1269,20 @@ export default function App() {
   const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
   const events = useMemo(() => [...initialEvents, ...sheetEvents], [sheetEvents])
   const activities = initialActivities
+  const selectedEvent = useMemo(() => events.find((event) => String(event.id) === String(selectedEventId)), [events, selectedEventId])
+
+  function openEventDetails(event) {
+    setSelectedEventId(event.id)
+    setView('eventDetail')
+  }
 
   return (
     <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
       <Header view={view} setView={setView} />
       <div className="mx-auto max-w-7xl px-4 pt-3 text-xs font-bold text-slate-500 md:px-8">{dataStatus}</div>
-      {view === 'home' && <HomeView setView={setView} events={events} />}
-      {view === 'events' && <EventsView events={events} />}
+      {view === 'home' && <HomeView setView={setView} events={events} openEventDetails={openEventDetails} />}
+      {view === 'events' && <EventsView events={events} openEventDetails={openEventDetails} />}
+      {view === 'eventDetail' && <EventDetailView event={selectedEvent} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
       {view === 'booking' && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
