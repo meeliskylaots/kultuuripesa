@@ -181,7 +181,6 @@ function Header({ view, setView }) {
   const nav = [
     ['events', 'Sündmused'],
     ['availability', 'Vabad ajad'],
-    ['booking', 'Ruumide rent'],
     ['activities', 'Ringid'],
     ['contact', 'Kontakt']
   ]
@@ -198,13 +197,13 @@ function Header({ view, setView }) {
         </button>
         <nav className="hidden items-center gap-5 text-sm font-bold text-slate-700 lg:flex">
           {nav.map(([id, label]) => (
-            <button key={id} onClick={() => setView(id)} className={cx('hover:text-emerald-700', view === id && 'text-emerald-700')}>{label}</button>
+            <button key={id} onClick={() => setView(id)} className={cx('hover:text-emerald-700', (view === id || (id === 'availability' && ['roomDetail', 'booking'].includes(view))) && 'text-emerald-700')}>{label}</button>
           ))}
         </nav>
         <div className="hidden gap-2 md:flex">
           <button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">Töötajale</button>
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-200">Vaata sündmusi</button>
-          <button onClick={() => setView('booking')} className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</button>
+          <button onClick={() => setView('availability')} className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</button>
         </div>
       </div>
     </header>
@@ -265,7 +264,7 @@ function HomeView({ setView, events }) {
         <div>
           <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast</p>
           <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Leia sündmused, vabad ajad ja ruumid kiiresti.</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Avaleht on lühike teejuht. Vali, kas soovid tulla sündmusele, kontrollida ruumi vaba aega või saata broneeringusoovi.</p>
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vali kiiresti, kas soovid sündmusi vaadata, ruumi vaba aega kontrollida või broneeringusooviga alustada.</p>
         </div>
         <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
           <div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-100 via-white to-amber-50 p-5">
@@ -273,15 +272,10 @@ function HomeView({ setView, events }) {
             <div className="grid gap-3">
               <button onClick={() => setView('events')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Vaadata sündmusi</b><span className="block text-sm text-slate-500">Kontserdid, töötoad ja kogukonnaüritused</span></span><span>→</span></button>
               <button onClick={() => setView('availability')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Kontrollida ruumi vaba aega</b><span className="block text-sm text-slate-500">Näed hõivatud ja vabu aegu</span></span><span>→</span></button>
-              <button onClick={() => setView('booking')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Broneerida ruum</b><span className="block text-sm text-slate-500">Vali aeg, teenused ja saada soov</span></span><span>→</span></button>
+              <button onClick={() => setView('availability')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Broneerida ruum</b><span className="block text-sm text-slate-500">Alusta ruumi ja vaba aja valikust</span></span><span>→</span></button>
             </div>
           </div>
         </div>
-      </section>
-      <section className="mt-10 grid gap-4 md:grid-cols-3">
-        <ActionCard icon="📅" title="Sündmused" text="Vaata lähiaja avalikke sündmusi ja registreerimisinfot." onClick={() => setView('events')} />
-        <ActionCard icon="🏠" title="Vabad ajad" text="Kontrolli ruumipõhiselt, millal rahvamaja on kasutuses või vaba." onClick={() => setView('availability')} />
-        <ActionCard icon="✍️" title="Broneeri ruum" text="Saada broneeringusoov alles pärast vaba aja kontrolli." onClick={() => setView('booking')} />
       </section>
       <section className="mt-12">
         <div className="mb-5 flex items-end justify-between gap-3">
@@ -511,7 +505,7 @@ function AvailabilityPanel({ events, activities, roomId, dateISO }) {
 function AvailabilityView({ events, activities, setView, setSelectedRoomId }) {
   return (
     <Page>
-      <SectionHeader eyebrow="Ruumide kasutus ja vabad ajad" title="Vali ruum ja vaata kalendrit" text="Kõigepealt vali ruum. Seejärel näed ruumi infot, kasutuskalendrit, vabu aegu ja saad jätkata broneeringuga." />
+      <SectionHeader eyebrow="Ruumide kasutus ja vabad ajad" title="Vali ruum ja vaata kalendrit" text="Vali ruum, vaata kalendrist vabu ja hõivatud aegu ning jätka broneeringuga ainult sobiva aja korral." />
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         {rentalRooms.map((room) => (
           <RoomCard key={room.id} room={room} onOpen={() => { setSelectedRoomId(room.id); setView('roomDetail') }} />
@@ -526,7 +520,7 @@ function StepBadge({ step, current, label }) {
 }
 
 function BookingView({ events, activities, initialDraft }) {
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(initialDraft ? 2 : 1)
   const [form, setForm] = useState({
     roomId: initialDraft?.roomId || rentalRooms[0].id,
     date: initialDraft?.date || '2026-06-20',
@@ -603,7 +597,7 @@ function BookingView({ events, activities, initialDraft }) {
 
   return (
     <Page>
-      <SectionHeader eyebrow="Ruumide rent" title="Broneeri ruum samm-sammult" text="Kõigepealt kontrollime ruumi ja aja sobivust. Alles pärast seda küsime sündmuse, teenuste ja kontaktide infot." />
+      <SectionHeader eyebrow="Broneeringusoov" title="Täienda andmed ja saada soov" text="Ruum ja aeg on valitud kalendrivaates. Nüüd lisa sündmuse, teenuste ja kontaktide info." />
       <div className="mb-5 flex gap-2 overflow-x-auto pb-2"><StepBadge step={1} current={step} label="Ruum ja aeg" /><StepBadge step={2} current={step} label="Sündmus" /><StepBadge step={3} current={step} label="Teenused" /><StepBadge step={4} current={step} label="Kontakt" /></div>
       <div className="grid gap-6 lg:grid-cols-[0.75fr_1.25fr]">
         <aside className="rounded-[1.5rem] bg-slate-950 p-6 text-white lg:sticky lg:top-24 lg:self-start">
