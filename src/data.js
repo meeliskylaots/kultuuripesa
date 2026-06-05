@@ -18,6 +18,7 @@ export const instructors = [
     house: 'Rannu rahvamaja',
     roomId: 'rannu-saal',
     room: 'Suur saal',
+    allowedRoomIds: ['rannu-saal', 'rannu-vaike-saal', 'konguta-saal'],
     active: true
   },
   {
@@ -29,6 +30,7 @@ export const instructors = [
     house: 'Konguta rahvamaja',
     roomId: 'konguta-saal',
     room: 'Saal',
+    allowedRoomIds: ['konguta-saal', 'konguta-valiala'],
     active: true
   }
 ]

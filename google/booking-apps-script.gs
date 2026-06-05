@@ -54,10 +54,10 @@ const HEADERS = [
 ]
 
 const INSTRUCTOR_SHEET_NAME = 'Juhendajad'
-const INSTRUCTOR_HEADERS = ['Juhendaja ID', 'Nimi', 'E-post', 'PIN', 'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Aktiivne']
+const INSTRUCTOR_HEADERS = ['Juhendaja ID', 'Nimi', 'E-post', 'PIN', 'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Aktiivne']
 const DEFAULT_INSTRUCTORS = [
-  ['rahvatants-rannu', 'Rahvatantsurühma juhendaja', 'juhendaja@example.com', '4821', 'Rahvatants', 'Rannu rahvamaja', 'Suur saal', 'rannu-saal', 'jah'],
-  ['kasitoo-konguta', 'Käsitööringi juhendaja', 'kasitoo@example.com', '7394', 'Käsitöö- ja loovtöötuba', 'Konguta rahvamaja', 'Saal', 'konguta-saal', 'jah']
+  ['rahvatants-rannu', 'Rahvatantsurühma juhendaja', 'juhendaja@example.com', '4821', 'Rahvatants', 'Rannu rahvamaja', 'Suur saal', 'rannu-saal', 'rannu-saal,rannu-vaike-saal,konguta-saal', 'jah'],
+  ['kasitoo-konguta', 'Käsitööringi juhendaja', 'kasitoo@example.com', '7394', 'Käsitöö- ja loovtöötuba', 'Konguta rahvamaja', 'Saal', 'konguta-saal', 'konguta-saal,konguta-valiala', 'jah']
 ]
 
 function doGet(e) {
@@ -261,6 +261,7 @@ function authInstructor_(email, pin) {
           house: row[map['Rahvamaja']] || '',
           room: row[map['Ruum']] || '',
           roomId: row[map['RoomID']] || '',
+          allowedRoomIds: String(row[map['Lubatud RoomID-d']] || row[map['RoomID']] || '').split(',').map(function(item) { return item.trim() }).filter(Boolean),
           active: true
         }
       }

@@ -844,6 +844,7 @@ function InstructorView({ events, activities, onUsageCreated }) {
   const [pin, setPin] = useState('')
   const [authError, setAuthError] = useState('')
   const [instructor, setInstructor] = useState(null)
+  const [selectedRoomId, setSelectedRoomId] = useState('')
   const [message, setMessage] = useState('')
   const [form, setForm] = useState({
     requestType: 'Proov',
@@ -862,8 +863,7 @@ function InstructorView({ events, activities, onUsageCreated }) {
       if (bookingSettings.appsScriptUrl) {
         const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', email: normalizedEmail, pin })
         if (data?.ok && data.instructor) {
-          setInstructor(data.instructor)
-          setForm((current) => ({ ...current, publicTitle: data.instructor.collective || '' }))
+          enterInstructor(data.instructor)
           return
         }
       }
@@ -873,8 +873,7 @@ function InstructorView({ events, activities, onUsageCreated }) {
 
     const local = instructors.find((item) => item.active && item.email.toLowerCase() === normalizedEmail && String(item.pin) === String(pin))
     if (local) {
-      setInstructor(local)
-      setForm((current) => ({ ...current, publicTitle: local.collective || '' }))
+      enterInstructor(local)
     } else {
       setAuthError('E-post ja PIN ei klapi aktiivse juhendaja andmetega.')
     }
@@ -882,8 +881,22 @@ function InstructorView({ events, activities, onUsageCreated }) {
 
   function logout() {
     setInstructor(null)
+    setSelectedRoomId('')
     setPin('')
     setMessage('')
+  }
+
+  function allowedRoomsFor(activeInstructor) {
+    const ids = activeInstructor?.allowedRoomIds?.length ? activeInstructor.allowedRoomIds : [activeInstructor?.roomId].filter(Boolean)
+    return rentalRooms.filter((room) => ids.includes(room.id))
+  }
+
+  function enterInstructor(activeInstructor) {
+    const allowed = allowedRoomsFor(activeInstructor)
+    const firstRoom = allowed[0] || getRoomById(activeInstructor.roomId)
+    setInstructor(activeInstructor)
+    setSelectedRoomId(firstRoom.id)
+    setForm((current) => ({ ...current, publicTitle: activeInstructor.collective || '', date: current.date || '2026-06-09' }))
   }
 
   if (!instructor) {
@@ -901,8 +914,10 @@ function InstructorView({ events, activities, onUsageCreated }) {
     )
   }
 
-  const room = getRoomById(instructor.roomId)
-  const availability = getAvailability(instructor.roomId, form.date, form.startTime, form.endTime, events, activities)
+  const allowedRooms = allowedRoomsFor(instructor)
+  const selectedRoom = getRoomById(selectedRoomId || instructor.roomId)
+  const allowedHouses = [...new Set(allowedRooms.map((room) => room.house))]
+  const availability = getAvailability(selectedRoom.id, form.date, form.startTime, form.endTime, events, activities)
   const canSubmit = form.date && form.startTime && form.endTime && form.publicTitle && availability.status === 'free'
 
   async function submitInstructorRequest() {
@@ -915,16 +930,16 @@ function InstructorView({ events, activities, onUsageCreated }) {
       status: 'ootel',
       instructorId: instructor.id,
       collective: instructor.collective,
-      house: instructor.house,
-      roomId: instructor.roomId,
-      roomName: instructor.room,
+      house: selectedRoom.house,
+      roomId: selectedRoom.id,
+      roomName: selectedRoom.name,
       date: form.date,
       startTime: form.startTime,
       endTime: form.endTime,
       reservedStartTime: minutesToTime(availability.reservedStart),
       reservedEndTime: minutesToTime(availability.reservedEnd),
-      bufferBeforeMinutes: room.bufferBeforeMinutes || 0,
-      bufferAfterMinutes: room.bufferAfterMinutes || 0,
+      bufferBeforeMinutes: selectedRoom.bufferBeforeMinutes || 0,
+      bufferAfterMinutes: selectedRoom.bufferAfterMinutes || 0,
       hours: Math.max(0, (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60),
       eventType: form.requestType,
       participants: '',
@@ -947,7 +962,7 @@ function InstructorView({ events, activities, onUsageCreated }) {
   return (
     <Page>
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <SectionHeader eyebrow="Juhendajale" title={`${instructor.collective} · ${instructor.house}`} text="Lisa proov, lisaproov, sündmus või prooviaja muudatus. Kõik sisestused lähevad enne avaldamist juhatajale kinnitamiseks." />
+        <SectionHeader eyebrow="Juhendajale" title={`${instructor.collective} · ${allowedHouses.join(' / ')}`} text="Vali rahvamaja ja ruum, vaata kalendrist olemasolevat kasutust ning esita proov, lisaproov või sündmus juhatajale kinnitamiseks." />
         <button onClick={logout} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-200">Välju</button>
       </div>
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -955,7 +970,8 @@ function InstructorView({ events, activities, onUsageCreated }) {
           <h2 className="text-xl font-black">Sisestuse andmed</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Tegevuse liik" required><select className={inputClass} value={form.requestType} onChange={(e) => setForm({ ...form, requestType: e.target.value })}><option>Proov</option><option>Lisaproov</option><option>Sündmus</option><option>Prooviaja muudatus</option><option>Proovi tühistamine</option></select></Field>
-            <Field label="Ruum"><input className={inputClass} value={`${room.house} · ${room.name}`} disabled /></Field>
+            <Field label="Rahvamaja" required><select className={inputClass} value={selectedRoom.house} onChange={(e) => { const nextRoom = allowedRooms.find((room) => room.house === e.target.value) || allowedRooms[0]; setSelectedRoomId(nextRoom.id) }}>{allowedHouses.map((house) => <option key={house}>{house}</option>)}</select></Field>
+            <Field label="Ruum" required><select className={inputClass} value={selectedRoom.id} onChange={(e) => setSelectedRoomId(e.target.value)}>{allowedRooms.filter((room) => room.house === selectedRoom.house).map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></Field>
             <Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
             <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
             <Field label="Lõpp" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field>
@@ -968,10 +984,13 @@ function InstructorView({ events, activities, onUsageCreated }) {
           {message && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{message}</p>}
           <button disabled={!canSubmit} onClick={submitInstructorRequest} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button>
         </section>
-        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-black">Sama ruumi kasutus valitud päeval</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Juhendaja näeb enne sisestamist, kas ruum on juba kasutuses või broneeritud.</p>
-          <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={instructor.roomId} dateISO={form.date} /></div>
+        <section className="space-y-5">
+          <MonthCalendar roomId={selectedRoom.id} selectedDate={form.date || '2026-06-09'} setSelectedDate={(date) => setForm({ ...form, date })} events={events} activities={activities} />
+          <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-xl font-black">Valitud ruumi kasutus</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Kalender näitab valitud rahvamaja ja ruumi kinnitatud ning ootel kasutusi. Päeva valimisel näed täpseid aegu ja vabu vahemikke.</p>
+            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={form.date} /></div>
+          </div>
         </section>
       </div>
     </Page>
