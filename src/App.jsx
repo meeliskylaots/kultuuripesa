@@ -51,6 +51,21 @@ function displayDate(dateISO) {
   return date.toLocaleDateString('et-EE', { day: 'numeric', month: 'long' })
 }
 
+function isoDate(year, monthIndex, day) {
+  return `${year}-${pad(monthIndex + 1)}-${pad(day)}`
+}
+
+function monthLabel(dateISO) {
+  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date('2026-06-01T12:00:00')
+  return base.toLocaleDateString('et-EE', { month: 'long', year: 'numeric' })
+}
+
+function shiftMonth(dateISO, amount) {
+  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date('2026-06-01T12:00:00')
+  base.setMonth(base.getMonth() + amount)
+  return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-01`
+}
+
 function dateBadge(dateISO) {
   const date = new Date(`${dateISO}T12:00:00`)
   if (Number.isNaN(date.getTime())) return { day: '', month: '' }
@@ -334,6 +349,133 @@ function EventsView({ events }) {
   )
 }
 
+
+function RoomCard({ room, onOpen }) {
+  return (
+    <article className="overflow-hidden rounded-[1.5rem] bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="flex h-40 items-center justify-center bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Lisa ruumi foto</div>
+      <div className="p-5">
+        <p className="text-xs font-black uppercase tracking-wide text-emerald-700">{room.house}</p>
+        <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{room.name}</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{room.description}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Pill>kuni {room.capacity} inimest</Pill>
+          <Pill>{formatEuro(room.hourlyRate)} / h</Pill>
+          <Pill>min {room.minimumHours} h</Pill>
+        </div>
+        <button onClick={onOpen} className="mt-5 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Vaata ja broneeri</button>
+      </div>
+    </article>
+  )
+}
+
+function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities }) {
+  const current = selectedDate || '2026-06-01'
+  const base = new Date(`${current.slice(0, 7)}-01T12:00:00`)
+  const year = base.getFullYear()
+  const month = base.getMonth()
+  const firstWeekday = (base.getDay() + 6) % 7
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < firstWeekday; i += 1) cells.push(null)
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push(isoDate(year, month, day))
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  return (
+    <div className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <button onClick={() => setSelectedDate(shiftMonth(current, -1))} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">‹</button>
+        <h3 className="text-lg font-black capitalize text-slate-950">{monthLabel(current)}</h3>
+        <button onClick={() => setSelectedDate(shiftMonth(current, 1))} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">›</button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-black uppercase text-slate-500">
+        {['E', 'T', 'K', 'N', 'R', 'L', 'P'].map((day) => <div key={day} className="py-2">{day}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((dateISO, index) => {
+          if (!dateISO) return <div key={`empty-${index}`} className="min-h-16 rounded-xl bg-slate-50" />
+          const items = getRoomDayItems(roomId, dateISO, events, activities)
+          const isSelected = dateISO === selectedDate
+          const day = Number(dateISO.slice(-2))
+          return (
+            <button key={dateISO} onClick={() => setSelectedDate(dateISO)} className={cx('min-h-16 rounded-xl p-2 text-left ring-1 transition', isSelected ? 'bg-emerald-700 text-white ring-emerald-700' : items.length ? 'bg-slate-100 text-slate-900 ring-slate-200 hover:bg-slate-200' : 'bg-white text-slate-900 ring-slate-200 hover:bg-emerald-50')}>
+              <span className="text-sm font-black">{day}</span>
+              {items.length > 0 && <span className={cx('mt-2 block rounded-full px-2 py-1 text-[10px] font-black', isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700')}>{items.length} kasutus</span>}
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-white ring-1 ring-slate-200" /> vaba</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-100 ring-1 ring-slate-200" /> kasutuses</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-700" /> valitud</span>
+      </div>
+    </div>
+  )
+}
+
+function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, setView, setBookingDraft }) {
+  const [selectedDate, setSelectedDate] = useState('2026-06-20')
+  const [startTime, setStartTime] = useState('18:00')
+  const [endTime, setEndTime] = useState('22:00')
+  const room = getRoomById(selectedRoomId)
+  const availability = getAvailability(room.id, selectedDate, startTime, endTime, events, activities)
+  const canContinue = availability.status === 'free'
+
+  function continueBooking() {
+    setBookingDraft({ roomId: room.id, date: selectedDate, startTime, endTime })
+    setView('booking')
+  }
+
+  return (
+    <Page>
+      <button onClick={() => setView('availability')} className="mb-5 rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">← Tagasi ruumide juurde</button>
+      <section className="grid gap-8 lg:grid-cols-[1fr_0.9fr]">
+        <div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {rentalRooms.map((item) => (
+              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate('2026-06-20') }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
+            ))}
+          </div>
+          <SectionHeader eyebrow={room.house} title={room.name} text={room.description} compact />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200"><p className="text-xs font-black uppercase text-slate-500">Mahutavus</p><p className="mt-1 text-xl font-black">{room.capacity} inimest</p></div>
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200"><p className="text-xs font-black uppercase text-slate-500">Hind</p><p className="mt-1 text-xl font-black">{formatEuro(room.hourlyRate)} / h</p></div>
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200"><p className="text-xs font-black uppercase text-slate-500">Miinimum</p><p className="mt-1 text-xl font-black">{room.minimumHours} h</p></div>
+          </div>
+          <div className="mt-5 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <p className="mb-3 text-xs font-black uppercase tracking-wide text-slate-500">Rendi hinna sees</p>
+            <div className="flex flex-wrap gap-2">{room.included.map((item) => <Pill key={item}>{item}</Pill>)}</div>
+            <p className="mb-3 mt-5 text-xs font-black uppercase tracking-wide text-slate-500">Eraldi kokkuleppel</p>
+            <div className="flex flex-wrap gap-2">{room.agreement.map((item) => <Pill key={item}>{item}</Pill>)}</div>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="flex h-32 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Lisa foto</div>
+            <div className="flex h-32 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Lisa foto</div>
+            <div className="flex h-32 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Lisa foto</div>
+          </div>
+        </div>
+        <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
+          <MonthCalendar roomId={room.id} selectedDate={selectedDate} setSelectedDate={setSelectedDate} events={events} activities={activities} />
+          <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-xl font-black text-slate-950">Vali kasutusaeg</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast. Kontroll toimub koos puhvriga.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Field label="Algusaeg" required><input type="time" className={inputClass} value={startTime} onChange={(e) => setStartTime(e.target.value)} /></Field>
+              <Field label="Lõpuaeg" required><input type="time" className={inputClass} value={endTime} onChange={(e) => setEndTime(e.target.value)} /></Field>
+            </div>
+            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} /></div>
+            {availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on esialgu vaba. Ruum hoitakse puhvrit arvestades kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}
+            {availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Seda aega ei saa valida.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}
+            {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Lõpuaeg peab olema algusajast hilisem.</div>}
+            <button disabled={!canContinue} onClick={continueBooking} className="mt-5 w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka broneeringuga</button>
+          </div>
+        </aside>
+      </section>
+    </Page>
+  )
+}
+
 function AvailabilityPanel({ events, activities, roomId, dateISO }) {
   const room = getRoomById(roomId)
   const items = getRoomDayItems(roomId, dateISO, events, activities)
@@ -366,18 +508,15 @@ function AvailabilityPanel({ events, activities, roomId, dateISO }) {
   )
 }
 
-function AvailabilityView({ events, activities, setView }) {
-  const [roomId, setRoomId] = useState(rentalRooms[0].id)
-  const [dateISO, setDateISO] = useState('2026-06-20')
+function AvailabilityView({ events, activities, setView, setSelectedRoomId }) {
   return (
     <Page>
-      <SectionHeader eyebrow="Ruumide kasutus ja vabad ajad" title="Kontrolli ruumi vaba aega" text="Avalik vaade näitab kõiki ruumi kasutusi vähemalt hõivatuse tasemel. Eraürituse detailid ei ole avalikud, kuid aeg on nähtav kui ruumi kasutus." />
-      <div className="mb-5 grid gap-3 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-slate-200 md:grid-cols-3">
-        <label><span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">Ruum</span><select value={roomId} onChange={(e) => setRoomId(e.target.value)} className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200">{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></label>
-        <label><span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">Kuupäev</span><input type="date" value={dateISO} onChange={(e) => setDateISO(e.target.value)} className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200" /></label>
-        <div className="flex items-end"><button onClick={() => setView('booking')} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Jätka broneerima</button></div>
+      <SectionHeader eyebrow="Ruumide kasutus ja vabad ajad" title="Vali ruum ja vaata kalendrit" text="Kõigepealt vali ruum. Seejärel näed ruumi infot, kasutuskalendrit, vabu aegu ja saad jätkata broneeringuga." />
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+        {rentalRooms.map((room) => (
+          <RoomCard key={room.id} room={room} onOpen={() => { setSelectedRoomId(room.id); setView('roomDetail') }} />
+        ))}
       </div>
-      <AvailabilityPanel events={events} activities={activities} roomId={roomId} dateISO={dateISO} />
     </Page>
   )
 }
@@ -386,13 +525,13 @@ function StepBadge({ step, current, label }) {
   return <div className={cx('rounded-2xl px-3 py-2 text-xs font-black ring-1', step === current ? 'bg-emerald-700 text-white ring-emerald-700' : step < current ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-white text-slate-500 ring-slate-200')}>{step}. {label}</div>
 }
 
-function BookingView({ events, activities }) {
+function BookingView({ events, activities, initialDraft }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({
-    roomId: rentalRooms[0].id,
-    date: '2026-06-20',
-    startTime: '18:00',
-    endTime: '22:00',
+    roomId: initialDraft?.roomId || rentalRooms[0].id,
+    date: initialDraft?.date || '2026-06-20',
+    startTime: initialDraft?.startTime || '18:00',
+    endTime: initialDraft?.endTime || '22:00',
     eventType: '',
     participants: '',
     publicEvent: false,
@@ -533,6 +672,8 @@ function AdminView({ setView, selectedRole, events, activities, requests, setReq
 export default function App() {
   const [view, setView] = useState('home')
   const [selectedRole, setSelectedRole] = useState('director')
+  const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
+  const [bookingDraft, setBookingDraft] = useState(null)
   const [events] = useState(initialEvents)
   const [activities] = useState(initialActivities)
   const [requests, setRequests] = useState(initialRequests)
@@ -542,8 +683,9 @@ export default function App() {
       <Header view={view} setView={setView} />
       {view === 'home' && <HomeView setView={setView} events={events} />}
       {view === 'events' && <EventsView events={events} />}
-      {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} />}
-      {view === 'booking' && <BookingView events={events} activities={activities} />}
+      {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
+      {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
+      {view === 'booking' && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} />}
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
