@@ -70,7 +70,7 @@ function doGet(e) {
     if (action === 'list') {
       data = listBookings_()
     } else if (action === 'authInstructor') {
-      data = authInstructor_(params.email, params.pin)
+      data = authInstructor_(params.pin)
     } else {
       data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
     }
@@ -235,10 +235,9 @@ function createUsage_(payload) {
   return { ok: true, bookingId: usageId, message: 'Sisestus saadeti kinnitamiseks.' }
 }
 
-function authInstructor_(email, pin) {
-  const normalizedEmail = String(email || '').trim().toLowerCase()
+function authInstructor_(pin) {
   const normalizedPin = String(pin || '').trim()
-  if (!normalizedEmail || !normalizedPin) return { ok: false, error: 'E-post või PIN puudub.' }
+  if (!normalizedPin) return { ok: false, error: 'PIN puudub.' }
 
   const sheet = ensureInstructorSheet_()
   const values = sheet.getDataRange().getValues()
@@ -248,15 +247,15 @@ function authInstructor_(email, pin) {
   for (let i = 1; i < values.length; i += 1) {
     const row = values[i]
     const active = String(row[map['Aktiivne']] || '').toLowerCase()
-    const rowEmail = String(row[map['E-post']] || '').trim().toLowerCase()
     const rowPin = String(row[map['PIN']] || '').trim()
-    if (rowEmail === normalizedEmail && rowPin === normalizedPin && !['ei', 'false', '0'].includes(active)) {
+    if (rowPin === normalizedPin && !['ei', 'false', '0'].includes(active)) {
       return {
         ok: true,
         instructor: {
           id: row[map['Juhendaja ID']] || '',
           name: row[map['Nimi']] || '',
           email: row[map['E-post']] || '',
+          pin: rowPin,
           collective: row[map['Kollektiiv']] || '',
           house: row[map['Rahvamaja']] || '',
           room: row[map['Ruum']] || '',
