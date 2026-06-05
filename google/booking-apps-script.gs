@@ -1,23 +1,82 @@
 /**
- * Rannu ja Konguta rahvamajade ruumibroneeringu vastuvõtja.
+ * Kultuuripesa broneeringute ja ruumikasutuste API.
  *
- * Mida teeb:
- * 1. Võtab veebilehe broneeringuvormist päringu vastu.
- * 2. Salvestab päringu Google Sheeti lehele "Broneeringud".
- * 3. Saadab e-kirja rahvamaja e-postile.
- * 4. Saadab kinnituskirja kliendile.
+ * Töövoog:
+ * - Avalik veeb saadab broneeringu Apps Scripti kaudu Google Sheeti.
+ * - PIN-koodiga adminivaade loeb ootel/kinnitatud broneeringuid samast Sheetist.
+ * - Admin kinnitab/tühistab broneeringu veebivaates.
+ * - Kinnitatud broneering ilmub avalikku ruumikalendrisse, sest veeb loeb kinnitatud read Sheetist.
  */
 
 const SHEET_ID = '15eeMfVjiQzbrEVTgstIcEykaj6sSy3f9-hnNAv6yx3I'
 const SHEET_NAME = 'Broneeringud'
 
-// Testimiseks võivad need olla alguses sinu enda e-postid.
-// Hiljem asenda Rannu ja Konguta päris e-postidega.
 const DEFAULT_EMAIL = 'meeliskylaots@gmail.com'
 const RANNU_EMAIL = 'meeliskylaots@gmail.com'
 const KONGUTA_EMAIL = 'meeliskylaots@gmail.com'
-
 const ORGANIZATION_NAME = 'Rannu ja Konguta rahvamajad'
+
+const HEADERS = [
+  'Sisestamise aeg',
+  'Broneeringu ID',
+  'Tüüp',
+  'Staatus',
+  'Rahvamaja',
+  'Ruum',
+  'RoomID',
+  'Kuupäev',
+  'Algus',
+  'Lõpp',
+  'Ruum kinni alates',
+  'Ruum kinni kuni',
+  'Puhver enne (min)',
+  'Puhver pärast (min)',
+  'Tunnid',
+  'Sündmuse liik',
+  'Osalejad',
+  'Kasutus',
+  'Nimi',
+  'E-post',
+  'Telefon',
+  'Valitud lisateenused',
+  'Ruumi hind',
+  'Koristus ja ettevalmistus',
+  'Teenused kokku',
+  'Orienteeruv koguhind',
+  'Lisainfo',
+  'Märkus hinna kohta',
+  'Avaliku kalendri tekst',
+  'Kuvamise viis',
+  'Kinnitamise aeg',
+  'Kinnituskiri saadetud'
+]
+
+function doGet(e) {
+  const params = e && e.parameter ? e.parameter : {}
+  const action = params.action || 'ping'
+  const callback = params.callback
+
+  let data
+  try {
+    if (action === 'list') {
+      data = listBookings_()
+    } else {
+      data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
+    }
+  } catch (error) {
+    data = { ok: false, error: String(error) }
+  }
+
+  if (callback) {
+    return ContentService
+      .createTextOutput(`${callback}(${JSON.stringify(data)})`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT)
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON)
+}
 
 function doPost(e) {
   try {
@@ -26,98 +85,168 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents)
-    validatePayload_(payload)
 
-    const sheet = getOrCreateSheet_()
-    ensureHeader_(sheet)
+    if (payload.action === 'updateStatus') {
+      return jsonResponse_(updateStatus_(payload))
+    }
 
-    const bookingId = createBookingId_()
-    const staffEmail = getStaffEmail_(payload.house, payload.roomEmail)
-    const selectedServicesText = formatSelectedServicesForSheet_(payload.selectedServices)
-
-    sheet.appendRow([
-      new Date(),
-      bookingId,
-      payload.house || '',
-      payload.roomName || '',
-      payload.date || '',
-      payload.startTime || '',
-      payload.endTime || '',
-      payload.reservedStartTime || '',
-      payload.reservedEndTime || '',
-      payload.bufferBeforeMinutes || '',
-      payload.bufferAfterMinutes || '',
-      payload.hours || '',
-      payload.eventType || '',
-      payload.participants || '',
-      payload.publicEvent ? 'avalik sündmus' : 'era- või kinnine sündmus',
-      payload.name || '',
-      payload.email || '',
-      payload.phone || '',
-      selectedServicesText,
-      Number(payload.roomCost || 0),
-      'sisaldub ruumi rendihinnas',
-      Number(payload.servicesTotal || 0),
-      Number(payload.estimatedTotal || 0),
-      payload.notes || '',
-      payload.disclaimer || '',
-      'ootel'
-    ])
-
-    sendStaffEmail_(staffEmail, payload, bookingId)
-    sendClientEmail_(payload, bookingId)
-
-    return jsonResponse_({
-      ok: true,
-      bookingId: bookingId,
-      message: 'Broneeringusoov saadeti edukalt.'
-    })
+    return jsonResponse_(createBooking_(payload))
   } catch (error) {
-    return jsonResponse_({
-      ok: false,
-      error: String(error)
-    })
+    return jsonResponse_({ ok: false, error: String(error) })
   }
-}
-
-function doGet() {
-  return ContentService
-    .createTextOutput('Rannu ja Konguta ruumibroneeringu Apps Script töötab.')
-    .setMimeType(ContentService.MimeType.TEXT)
 }
 
 function testSetup() {
   const sheet = getOrCreateSheet_()
   ensureHeader_(sheet)
-
   MailApp.sendEmail({
     to: Session.getActiveUser().getEmail(),
-    subject: 'Ruumibroneeringu Apps Script töötab',
+    subject: 'Kultuuripesa Apps Script töötab',
     htmlBody: '<h2>Test õnnestus</h2><p>Google Sheet on leitav ja e-kirjade saatmine töötab.</p>',
     name: ORGANIZATION_NAME
   })
 }
 
-function validatePayload_(payload) {
-  const requiredFields = [
-    'house',
-    'roomName',
-    'date',
-    'startTime',
-    'endTime',
-    'eventType',
-    'name',
-    'email',
-    'phone'
-  ]
+function createBooking_(payload) {
+  validatePayload_(payload)
 
-  const missing = requiredFields.filter(field => !payload[field])
-  if (missing.length > 0) {
-    throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
+  const sheet = getOrCreateSheet_()
+  const headers = ensureHeader_(sheet)
+  const bookingId = createBookingId_()
+  const selectedServicesText = formatSelectedServicesForSheet_(payload.selectedServices)
+
+  const rowObject = {
+    'Sisestamise aeg': new Date(),
+    'Broneeringu ID': bookingId,
+    'Tüüp': payload.type || 'broneering',
+    'Staatus': payload.status || 'ootel',
+    'Rahvamaja': payload.house || '',
+    'Ruum': payload.roomName || '',
+    'RoomID': payload.roomId || '',
+    'Kuupäev': payload.date || '',
+    'Algus': payload.startTime || '',
+    'Lõpp': payload.endTime || '',
+    'Ruum kinni alates': payload.reservedStartTime || '',
+    'Ruum kinni kuni': payload.reservedEndTime || '',
+    'Puhver enne (min)': payload.bufferBeforeMinutes || '',
+    'Puhver pärast (min)': payload.bufferAfterMinutes || '',
+    'Tunnid': payload.hours || '',
+    'Sündmuse liik': payload.eventType || '',
+    'Osalejad': payload.participants || '',
+    'Kasutus': payload.publicEvent ? 'avalik sündmus' : 'era- või kinnine sündmus',
+    'Nimi': payload.name || '',
+    'E-post': payload.email || '',
+    'Telefon': payload.phone || '',
+    'Valitud lisateenused': selectedServicesText,
+    'Ruumi hind': Number(payload.roomCost || 0),
+    'Koristus ja ettevalmistus': 'sisaldub ruumi rendihinnas',
+    'Teenused kokku': Number(payload.servicesTotal || 0),
+    'Orienteeruv koguhind': Number(payload.estimatedTotal || 0),
+    'Lisainfo': payload.notes || '',
+    'Märkus hinna kohta': payload.disclaimer || '',
+    'Avaliku kalendri tekst': payload.publicTitle || (payload.publicEvent ? (payload.eventType || 'Avalik sündmus') : 'Ruum broneeritud'),
+    'Kuvamise viis': payload.displayMode || (payload.publicEvent ? 'full' : 'neutral'),
+    'Kinnitamise aeg': '',
+    'Kinnituskiri saadetud': ''
   }
 
-  if (!isValidEmail_(payload.email)) {
-    throw new Error('Kliendi e-posti aadress ei ole korrektne.')
+  sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
+
+  const staffEmail = getStaffEmail_(payload.house, payload.roomEmail)
+  sendStaffEmail_(staffEmail, payload, bookingId)
+  sendClientReceivedEmail_(payload, bookingId)
+
+  return { ok: true, bookingId, message: 'Broneeringusoov saadeti edukalt.' }
+}
+
+function updateStatus_(payload) {
+  const bookingId = payload.bookingId || payload.id
+  if (!bookingId) throw new Error('Broneeringu ID puudub.')
+
+  const sheet = getOrCreateSheet_()
+  const headers = ensureHeader_(sheet)
+  const map = headerMap_(headers)
+  const values = sheet.getDataRange().getValues()
+  const idCol = map['Broneeringu ID']
+  if (idCol === undefined) throw new Error('Broneeringu ID veerg puudub.')
+
+  for (let i = 1; i < values.length; i += 1) {
+    if (String(values[i][idCol]) === String(bookingId)) {
+      const rowNumber = i + 1
+      setCell_(sheet, map, rowNumber, 'Staatus', payload.status || 'ootel')
+      if (payload.publicTitle !== undefined) setCell_(sheet, map, rowNumber, 'Avaliku kalendri tekst', payload.publicTitle)
+      if (payload.displayMode !== undefined) setCell_(sheet, map, rowNumber, 'Kuvamise viis', payload.displayMode)
+
+      if (payload.status === 'kinnitatud') {
+        setCell_(sheet, map, rowNumber, 'Kinnitamise aeg', new Date())
+        const rowObj = rowToObject_(headers, sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0])
+        const alreadySent = String(rowObj['Kinnituskiri saadetud'] || '').toLowerCase() === 'jah'
+        if (!alreadySent && rowObj['E-post']) {
+          sendClientConfirmedEmail_(rowObj)
+          setCell_(sheet, map, rowNumber, 'Kinnituskiri saadetud', 'jah')
+        }
+      }
+
+      return { ok: true, bookingId, status: payload.status || 'ootel' }
+    }
+  }
+
+  throw new Error('Broneeringut ei leitud: ' + bookingId)
+}
+
+function listBookings_() {
+  const sheet = getOrCreateSheet_()
+  const headers = ensureHeader_(sheet)
+  const values = sheet.getDataRange().getValues()
+  const bookings = []
+
+  for (let i = 1; i < values.length; i += 1) {
+    const row = rowToObject_(headers, values[i])
+    if (!row['Broneeringu ID']) continue
+    bookings.push(sheetRowToBooking_(row, i + 1))
+  }
+
+  const usages = bookings.filter((item) => ['kinnitatud', 'published', 'avaldatud'].includes(String(item.status || '').toLowerCase()))
+  return { ok: true, bookings, usages }
+}
+
+function sheetRowToBooking_(row, rowNumber) {
+  const useText = String(row['Kasutus'] || '').toLowerCase()
+  const status = String(row['Staatus'] || 'ootel').toLowerCase()
+  return {
+    rowNumber,
+    bookingId: row['Broneeringu ID'] || '',
+    id: row['Broneeringu ID'] || '',
+    type: row['Tüüp'] || 'broneering',
+    status,
+    house: row['Rahvamaja'] || '',
+    roomName: row['Ruum'] || '',
+    room: row['Ruum'] || '',
+    roomId: row['RoomID'] || '',
+    date: toIsoDate_(row['Kuupäev']),
+    dateISO: toIsoDate_(row['Kuupäev']),
+    startTime: normalizeTime_(row['Algus']),
+    endTime: normalizeTime_(row['Lõpp']),
+    reservedStartTime: normalizeTime_(row['Ruum kinni alates']),
+    reservedEndTime: normalizeTime_(row['Ruum kinni kuni']),
+    bufferBeforeMinutes: row['Puhver enne (min)'] || '',
+    bufferAfterMinutes: row['Puhver pärast (min)'] || '',
+    hours: row['Tunnid'] || '',
+    eventType: row['Sündmuse liik'] || '',
+    participants: row['Osalejad'] || '',
+    publicEvent: useText.includes('avalik'),
+    name: row['Nimi'] || '',
+    email: row['E-post'] || '',
+    phone: row['Telefon'] || '',
+    selectedServicesText: row['Valitud lisateenused'] || '',
+    roomCost: row['Ruumi hind'] || 0,
+    servicesTotal: row['Teenused kokku'] || 0,
+    estimatedTotal: row['Orienteeruv koguhind'] || 0,
+    notes: row['Lisainfo'] || '',
+    disclaimer: row['Märkus hinna kohta'] || '',
+    publicTitle: row['Avaliku kalendri tekst'] || (useText.includes('avalik') ? (row['Sündmuse liik'] || 'Avalik sündmus') : 'Ruum broneeritud'),
+    calendarText: row['Avaliku kalendri tekst'] || '',
+    displayMode: row['Kuvamise viis'] || (useText.includes('avalik') ? 'full' : 'neutral')
   }
 }
 
@@ -129,38 +258,49 @@ function getOrCreateSheet_() {
 }
 
 function ensureHeader_(sheet) {
-  if (sheet.getLastRow() > 0) return
+  const lastColumn = Math.max(sheet.getLastColumn(), 1)
+  const existing = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String) : []
 
-  sheet.appendRow([
-    'Sisestamise aeg',
-    'Broneeringu ID',
-    'Rahvamaja',
-    'Ruum',
-    'Kuupäev',
-    'Algus',
-    'Lõpp',
-    'Ruum kinni alates',
-    'Ruum kinni kuni',
-    'Puhver enne (min)',
-    'Puhver pärast (min)',
-    'Tunnid',
-    'Sündmuse liik',
-    'Osalejad',
-    'Kasutus',
-    'Nimi',
-    'E-post',
-    'Telefon',
-    'Valitud lisateenused',
-    'Ruumi hind',
-    'Koristus ja ettevalmistus',
-    'Teenused kokku',
-    'Orienteeruv koguhind',
-    'Lisainfo',
-    'Märkus hinna kohta',
-    'Staatus'
-  ])
+  if (existing.length === 0) {
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS])
+    sheet.setFrozenRows(1)
+    return HEADERS.slice()
+  }
 
+  const headers = existing.slice()
+  HEADERS.forEach((header) => {
+    if (!headers.includes(header)) headers.push(header)
+  })
+
+  if (headers.length !== existing.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  }
   sheet.setFrozenRows(1)
+  return headers
+}
+
+function headerMap_(headers) {
+  const map = {}
+  headers.forEach((header, index) => { map[header] = index })
+  return map
+}
+
+function rowToObject_(headers, row) {
+  const obj = {}
+  headers.forEach((header, index) => { obj[header] = row[index] })
+  return obj
+}
+
+function setCell_(sheet, map, rowNumber, header, value) {
+  if (map[header] === undefined) return
+  sheet.getRange(rowNumber, map[header] + 1).setValue(value)
+}
+
+function validatePayload_(payload) {
+  const requiredFields = ['house', 'roomName', 'date', 'startTime', 'endTime', 'eventType', 'name', 'email', 'phone']
+  const missing = requiredFields.filter(field => !payload[field])
+  if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
+  if (!isValidEmail_(payload.email)) throw new Error('Kliendi e-posti aadress ei ole korrektne.')
 }
 
 function createBookingId_() {
@@ -172,7 +312,6 @@ function createBookingId_() {
 
 function getStaffEmail_(house, roomEmail) {
   if (roomEmail && isValidEmail_(roomEmail)) return roomEmail
-
   const houseText = String(house || '').toLowerCase()
   if (houseText.includes('rannu')) return RANNU_EMAIL
   if (houseText.includes('konguta')) return KONGUTA_EMAIL
@@ -189,135 +328,77 @@ function sendStaffEmail_(staffEmail, payload, bookingId) {
   })
 }
 
-function sendClientEmail_(payload, bookingId) {
+function sendClientReceivedEmail_(payload, bookingId) {
   if (!payload.email || !isValidEmail_(payload.email)) return
-
   MailApp.sendEmail({
     to: payload.email,
     subject: 'Sinu ruumi kasutamise soov on kätte saadud.',
-    htmlBody: buildClientEmailBody_(payload, bookingId),
+    htmlBody: buildClientReceivedEmailBody_(payload, bookingId),
+    name: ORGANIZATION_NAME
+  })
+}
+
+function sendClientConfirmedEmail_(row) {
+  const email = row['E-post']
+  if (!email || !isValidEmail_(email)) return
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Sinu ruumi kasutamise soov on kinnitatud.',
+    htmlBody: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+        <h2>Sinu ruumi kasutamise soov on kinnitatud.</h2>
+        <p>Tere, ${escapeHtml_(row['Nimi'] || '')}!</p>
+        <p>Kinnitame ruumi kasutamise järgmiste andmetega:</p>
+        <p><b>Broneeringu ID:</b> ${escapeHtml_(row['Broneeringu ID'] || '')}</p>
+        <p><b>Rahvamaja:</b> ${escapeHtml_(row['Rahvamaja'] || '')}</p>
+        <p><b>Ruum:</b> ${escapeHtml_(row['Ruum'] || '')}</p>
+        <p><b>Kuupäev:</b> ${escapeHtml_(toIsoDate_(row['Kuupäev']))}</p>
+        <p><b>Kellaaeg:</b> ${escapeHtml_(normalizeTime_(row['Algus']))}–${escapeHtml_(normalizeTime_(row['Lõpp']))}</p>
+        <p><b>Ruum on broneerimiseks suletud:</b> ${escapeHtml_(normalizeTime_(row['Ruum kinni alates']))}–${escapeHtml_(normalizeTime_(row['Ruum kinni kuni']))}</p>
+        <p><b>Orienteeruv hind:</b> ${escapeHtml_(String(row['Orienteeruv koguhind'] || ''))} €</p>
+        <p>Arve ja lepingu täpsemad sammud kinnitab rahvamaja töötaja.</p>
+        <p style="margin-top: 24px;">Heade soovidega<br>${ORGANIZATION_NAME}</p>
+      </div>
+    `,
     name: ORGANIZATION_NAME
   })
 }
 
 function buildStaffEmailBody_(payload, bookingId) {
-  const services = buildServicesHtml_(payload.selectedServices)
-  const included = buildListHtml_(payload.includedItems, 'Info puudub.')
-  const agreement = buildListHtml_(payload.agreementItems, 'Eraldi kokkuleppeid ei märgitud.')
-
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
       <h2>Uus ruumi kasutamise soov</h2>
       <p><b>Broneeringu ID:</b> ${escapeHtml_(bookingId)}</p>
       <p><b>Staatus:</b> ootel</p>
-
-      <h3>Ruum ja aeg</h3>
       <p><b>Rahvamaja:</b> ${escapeHtml_(payload.house || '')}</p>
       <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
       <p><b>Kuupäev:</b> ${escapeHtml_(payload.date || '')}</p>
       <p><b>Kellaaeg:</b> ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
-      <p><b>Ruum hoitakse broneeringu ja puhvri jaoks kinni:</b> ${escapeHtml_(payload.reservedStartTime || payload.startTime || '')}–${escapeHtml_(payload.reservedEndTime || payload.endTime || '')}</p>
-      <p><b>Puhver:</b> ${escapeHtml_(String(payload.bufferBeforeMinutes || 0))} min enne ja ${escapeHtml_(String(payload.bufferAfterMinutes || 0))} min pärast</p>
-      <p><b>Arvestuslik kestus:</b> ${escapeHtml_(String(payload.hours || ''))} h</p>
-
-      <h3>Sündmuse info</h3>
-      <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
-      <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
-      <p><b>Kasutus:</b> ${payload.publicEvent ? 'avalik sündmus' : 'era- või kinnine sündmus'}</p>
-
-      <h3>Klient</h3>
-      <p><b>Nimi:</b> ${escapeHtml_(payload.name || '')}</p>
-      <p><b>E-post:</b> ${escapeHtml_(payload.email || '')}</p>
-      <p><b>Telefon:</b> ${escapeHtml_(payload.phone || '')}</p>
-
-      <h3>Rendi hinna sees</h3>
-      ${included}
-
-      <h3>Eraldi kokkuleppel</h3>
-      ${agreement}
-
-      <h3>Valitud lisateenused</h3>
-      ${services}
-
-      <h3>Orienteeruv hind</h3>
-      <table style="border-collapse: collapse;">
-        <tr><td style="padding: 4px 12px 4px 0;">Ruumi kasutus:</td><td style="padding: 4px 0;"><b>${formatEuro_(payload.roomCost)}</b></td></tr>
-        <tr><td style="padding: 4px 12px 4px 0;">Koristus ja ettevalmistus:</td><td style="padding: 4px 0;"><b>sisaldub ruumi rendihinnas</b></td></tr>
-        <tr><td style="padding: 4px 12px 4px 0;">Valitud lisateenused:</td><td style="padding: 4px 0;"><b>${formatEuro_(payload.servicesTotal)}</b></td></tr>
-        <tr><td style="padding: 8px 12px 4px 0; border-top: 1px solid #e5e7eb;">Kokku:</td><td style="padding: 8px 0 4px 0; border-top: 1px solid #e5e7eb;"><b>${formatEuro_(payload.estimatedTotal)}</b></td></tr>
-      </table>
-
-      <h3>Lisainfo</h3>
-      <p>${escapeHtml_(payload.notes || '-')}</p>
-      <p style="margin-top: 24px; color: #6b7280;"><i>${escapeHtml_(payload.disclaimer || '')}</i></p>
-      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
-      <p><b>Järgmine samm:</b> kontrolli ruumi saadavust, kinnita tingimused ja vasta kliendile.</p>
+      <p><b>Broneerimiseks suletud:</b> ${escapeHtml_(payload.reservedStartTime || payload.startTime || '')}–${escapeHtml_(payload.reservedEndTime || payload.endTime || '')}</p>
+      <p><b>Klient:</b> ${escapeHtml_(payload.name || '')}, ${escapeHtml_(payload.email || '')}, ${escapeHtml_(payload.phone || '')}</p>
+      <p><b>Orienteeruv hind:</b> ${formatEuro_(payload.estimatedTotal)}</p>
+      <p><b>Lisainfo:</b> ${escapeHtml_(payload.notes || '-')}</p>
+      <p>Broneeringut saab kinnitada Kultuuripesa töötaja vaates.</p>
     </div>
   `
 }
 
-function buildClientEmailBody_(payload, bookingId) {
-  const services = buildServicesHtml_(payload.selectedServices)
-  const included = buildListHtml_(payload.includedItems, 'Info puudub.')
-  const agreement = buildListHtml_(payload.agreementItems, 'Eraldi kokkuleppeid ei märgitud.')
-
+function buildClientReceivedEmailBody_(payload, bookingId) {
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
       <h2>Sinu ruumi kasutamise soov on kätte saadud.</h2>
       <p>Tere, ${escapeHtml_(payload.name || '')}!</p>
-      <p>Aitäh. Sinu ruumi kasutamise soov on kätte saadud.</p>
+      <p>Aitäh. Sinu ruumi kasutamise soov on kätte saadud ja ootab rahvamaja kinnitust.</p>
       <p><b>Broneeringu ID:</b> ${escapeHtml_(bookingId)}</p>
-
-      <h3>Sinu päringu kokkuvõte</h3>
       <p><b>Rahvamaja:</b> ${escapeHtml_(payload.house || '')}</p>
       <p><b>Ruum:</b> ${escapeHtml_(payload.roomName || '')}</p>
       <p><b>Kuupäev:</b> ${escapeHtml_(payload.date || '')}</p>
       <p><b>Kellaaeg:</b> ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>
-      <p><b>Ruum hoitakse broneeringu ja puhvri jaoks kinni:</b> ${escapeHtml_(payload.reservedStartTime || payload.startTime || '')}–${escapeHtml_(payload.reservedEndTime || payload.endTime || '')}</p>
-      <p><b>Sündmuse liik:</b> ${escapeHtml_(payload.eventType || '')}</p>
-      <p><b>Osalejate arv:</b> ${escapeHtml_(String(payload.participants || ''))}</p>
-
-      <h3>Rendi hinna sees</h3>
-      ${included}
-
-      <h3>Eraldi kokkuleppel</h3>
-      ${agreement}
-
-      <h3>Valitud lisateenused</h3>
-      ${services}
-
-      <h3>Orienteeruv hind</h3>
-      <p><b>${formatEuro_(payload.estimatedTotal)}</b></p>
-      <p>Koristus ja ettevalmistus sisaldub ruumi rendihinnas.</p>
-      <p style="margin-top: 20px;"><b>NB!</b> See ei ole veel lõplik kinnitatud broneering. Rahvamaja töötaja kontrollib ruumi saadavust, täpsustab vajadused ning kinnitab lõpliku hinna ja tingimused.</p>
-      <p style="margin-top: 24px; color: #6b7280;"><i>${escapeHtml_(payload.disclaimer || '')}</i></p>
+      <p><b>Orienteeruv hind:</b> ${formatEuro_(payload.estimatedTotal)}</p>
+      <p><b>NB!</b> See ei ole veel lõplik kinnitatud broneering. Rahvamaja töötaja vaatab soovi üle ja saadab kinnituse.</p>
       <p style="margin-top: 24px;">Heade soovidega<br>${ORGANIZATION_NAME}</p>
     </div>
   `
-}
-
-function buildListHtml_(items, emptyText) {
-  if (!items || items.length === 0) {
-    return `<p>${escapeHtml_(emptyText || '-')}</p>`
-  }
-
-  const listItems = items
-    .map(item => `<li>${escapeHtml_(item)}</li>`)
-    .join('')
-
-  return `<ul>${listItems}</ul>`
-}
-
-function buildServicesHtml_(selectedServices) {
-  if (!selectedServices || selectedServices.length === 0) {
-    return '<p>Lisateenuseid ei valitud.</p>'
-  }
-
-  const items = selectedServices
-    .map(item => `<li>${escapeHtml_(item.label || '')}: ${formatEuro_(item.total)}</li>`)
-    .join('')
-
-  return `<ul>${items}</ul>`
 }
 
 function formatSelectedServicesForSheet_(selectedServices) {
@@ -327,6 +408,29 @@ function formatSelectedServicesForSheet_(selectedServices) {
 
 function formatEuro_(value) {
   return `${Number(value || 0).toFixed(2).replace('.', ',')} €`
+}
+
+function toIsoDate_(value) {
+  if (!value) return ''
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+  }
+  const text = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  const date = new Date(text)
+  if (!Number.isNaN(date.getTime())) return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+  return text
+}
+
+function normalizeTime_(value) {
+  if (!value && value !== 0) return ''
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'HH:mm')
+  }
+  const text = String(value)
+  const match = text.match(/(\d{1,2}):(\d{2})/)
+  if (match) return `${String(match[1]).padStart(2, '0')}:${match[2]}`
+  return text
 }
 
 function isValidEmail_(email) {

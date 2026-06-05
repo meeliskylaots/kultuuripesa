@@ -2,7 +2,8 @@ export const bookingSettings = {
   appsScriptUrl: 'https://script.google.com/macros/s/AKfycbzdFUJ4VLN_jjgX3KZsGDtwpU6cdBuLlRNGyZRodzIOktR2ZF6IuIGGMe_CV4rlnIe5/exec',
   defaultEmail: 'kultuur@elva.ee',
   clientCopySubject: 'Sinu ruumi kasutamise soov on kätte saadud.',
-  priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.'
+  priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.',
+  adminPin: '2026'
 }
 
 export const initialEvents = [
