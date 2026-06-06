@@ -355,7 +355,7 @@ function HomeView({ setView, events, openEventDetails }) {
     <Page>
       <section className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
         <div>
-          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast</p>
+          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast!</p>
           <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Rannu ja Konguta kultuurielu ühest kohast.</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vaata sündmusi, broneeri rahvamaja ruume ja leia üles kohalikud ringid, kollektiivid ning kogukonnategevused.</p>
         </div>
