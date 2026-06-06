@@ -27,7 +27,6 @@ const VIEW_LABELS = {
 
 const EVENT_TYPE_OPTIONS = ['Eraüritus', 'Koosolek', 'Koolitus', 'Töötuba', 'Kontsert', 'Kogukonnaüritus', 'Muu']
 
-const ELVA_EVENTS_URL = 'https://kultuuriaken.tartu.ee/et/syndmused?regions=788&starting_time=5'
 
 function cx(...classes) {
   return classes.filter(Boolean).join(' ')
@@ -292,7 +291,6 @@ function Header({ view, setView }) {
           {nav.map(([id, label]) => (
             <button key={id} onClick={() => setView(id)} className={cx('hover:text-emerald-700', (view === id || (id === 'availability' && ['roomDetail', 'booking'].includes(view))) && 'text-emerald-700')}>{label}</button>
           ))}
-          <a href={ELVA_EVENTS_URL} target="_blank" rel="noreferrer" className="text-emerald-700 hover:text-emerald-900">Elva valla sündmused ↗</a>
         </nav>
         <button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100 md:hidden">Töötajale</button>
         <div className="hidden gap-2 md:flex">
@@ -300,11 +298,6 @@ function Header({ view, setView }) {
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-200">Vaata sündmusi</button>
           <button onClick={() => setView('availability')} className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</button>
         </div>
-      </div>
-      <div className="border-t border-slate-100 px-4 py-2 md:hidden">
-        <a href={ELVA_EVENTS_URL} target="_blank" rel="noreferrer" className="block rounded-2xl bg-emerald-50 px-4 py-2 text-center text-sm font-black text-emerald-800 ring-1 ring-emerald-100">
-          Elva valla sündmused Kultuuriaknas ↗
-        </a>
       </div>
     </header>
   )
