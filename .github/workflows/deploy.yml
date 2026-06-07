@@ -1,1 +1,49 @@
+name: Deploy React App to GitHub Pages
 
+on:
+  push:
+    branches: ["main"]
+
+# Seadistab õigused, et saaks faile Pages'i üles laadida
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Lubab ainult ühte paralleelset üleslaadimist
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Koodi allalaadimine
+        uses: actions/checkout@v4
+
+      - name: Node.js paigaldamine
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sõltuvuste paigaldamine
+        run: npm ci
+
+      - name: Projekti ehitamine
+        run: npm run build
+
+      - name: Lehe seadistamine Pages jaoks
+        uses: actions/configure-pages@v4
+
+      - name: Failide üleslaadimine (Upload artifact)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist' # Vite loob vaikimisi dist kausta
+
+      - name: Avalikustamine (Deploy to GitHub Pages)
+        id: deployment
+        uses: actions/deploy-pages@v4
