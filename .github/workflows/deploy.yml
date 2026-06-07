@@ -31,7 +31,7 @@ jobs:
           node-version: 20
 
       - name: Sõltuvuste paigaldamine
-        run: npm ci
+        run: npm install
 
       - name: Projekti ehitamine
         run: npm run build
