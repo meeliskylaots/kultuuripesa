@@ -6,8 +6,6 @@ export const bookingSettings = {
   adminPin: '2026'
 }
 
-
-
 export const instructors = [
   {
     id: 'rahvatants-rannu',
@@ -40,6 +38,7 @@ export const initialEvents = [
     id: 1,
     title: 'Kogukonna filmiõhtu',
     publicTitle: 'Kogukonna filmiõhtu',
+    kind: 'event',
     displayMode: 'full',
     house: 'Rannu rahvamaja',
     roomId: 'rannu-saal',
@@ -64,6 +63,7 @@ export const initialEvents = [
     id: 2,
     title: 'Loovtöötuba peredele',
     publicTitle: 'Loovtöötuba peredele',
+    kind: 'event',
     displayMode: 'full',
     house: 'Konguta rahvamaja',
     roomId: 'konguta-saal',
@@ -88,6 +88,7 @@ export const initialEvents = [
     id: 3,
     title: 'Eraüritus: sünnipäev',
     publicTitle: 'Ruum broneeritud',
+    kind: 'booking',
     displayMode: 'neutral',
     house: 'Rannu rahvamaja',
     roomId: 'rannu-saal',
@@ -112,6 +113,7 @@ export const initialEvents = [
     id: 4,
     title: 'Suveõhtu Annikoru välialal',
     publicTitle: 'Suveõhtu Annikoru välialal',
+    kind: 'event',
     displayMode: 'full',
     house: 'Konguta rahvamaja',
     roomId: 'konguta-valiala',
@@ -136,67 +138,41 @@ export const initialEvents = [
 
 export const initialActivities = [
   {
-    id: 1,
+    id: 'act1',
     title: 'Rahvatants',
-    publicTitle: 'Rahvatantsu proov',
-    displayMode: 'category',
+    kind: 'activity',
     house: 'Rannu rahvamaja',
     roomId: 'rannu-saal',
-    room: 'Suur saal',
     audience: 'täiskasvanutele',
     time: 'Teisipäeviti 18.00–20.00',
-    dateISO: '2026-06-09',
-    startTime: '18:00',
-    endTime: '20:00',
-    leader: 'Kollektiivi juht',
-    contact: 'Küsi lisa',
-    status: 'published',
-    public: true,
-    blocksRoom: true
+    instructor: 'Kollektiivi juht',
+    joinInfo: 'Küsi lisa rahvamajast või tule otse proovi.',
+    status: 'published'
   },
   {
-    id: 2,
+    id: 'act2',
     title: 'Käsitöö- ja loovtöötuba',
-    publicTitle: 'Ringitegevus',
-    displayMode: 'category',
+    kind: 'activity',
     house: 'Konguta rahvamaja',
     roomId: 'konguta-saal',
-    room: 'Saal',
     audience: 'noortele ja täiskasvanutele',
-    time: 'Kord kuus',
-    dateISO: '2026-06-18',
-    startTime: '17:30',
-    endTime: '19:30',
-    leader: 'Töötoa juhendaja',
-    contact: 'Liitu huviga',
-    status: 'published',
-    public: true,
-    blocksRoom: true
+    time: 'Kord kuus neljapäeviti 17.30',
+    instructor: 'Töötoa juhendaja',
+    joinInfo: 'Liitu huviga, materjalid kohapeal.',
+    status: 'published'
   },
   {
-    id: 3,
-    title: 'Eakate kohtumised',
-    publicTitle: 'Eakate kohtumine',
-    displayMode: 'full',
-    house: 'Rannu rahvamaja',
-    roomId: 'rannu-vaike-saal',
-    room: 'Väike saal / koosolekuruum',
-    audience: 'eakatele',
-    time: 'Kaks korda kuus',
-    dateISO: '2026-06-10',
-    startTime: '11:00',
-    endTime: '13:00',
-    leader: 'Rahvamaja juht',
-    contact: 'Vaata aega',
-    status: 'published',
-    public: true,
-    blocksRoom: true
+    id: 'act3',
+    title: 'Segakoor',
+    kind: 'activity',
+    house: 'Konguta rahvamaja',
+    roomId: 'konguta-saal',
+    audience: 'kõigile lauluhuvilistele',
+    time: 'Esmaspäeviti 19.00–21.00',
+    instructor: 'Meelis Külaots',
+    joinInfo: 'Tule proovi kohale või kirjuta kultuur@elva.ee',
+    status: 'published'
   }
-]
-
-export const initialRequests = [
-  { id: 101, type: 'Prooviaja muudatus', title: 'Rahvatantsu proov soovib liikuda kolmapäevale', submittedBy: 'Rahvatantsurühma juht', house: 'Rannu rahvamaja', target: 'Rahvatants', oldValue: 'Teisipäeviti 18.00–20.00', newValue: 'Kolmapäeviti 18.30–20.30', status: 'ootel', publicTitle: 'Rahvatantsu proov' },
-  { id: 102, type: 'Uus sündmus', title: 'Kogukonna pannkoogihommik', submittedBy: 'Konguta külaseltsi esindaja', house: 'Konguta rahvamaja', target: 'Avalik kalender', oldValue: '-', newValue: '22. juuni kell 10.00', status: 'ootel', publicTitle: 'Kogukonna hommik' }
 ]
 
 export const rentalRooms = [
