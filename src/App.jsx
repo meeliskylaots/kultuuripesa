@@ -320,7 +320,7 @@ function Header({ view, setView }) {
   const nav = [
     ['events', 'Sündmused'],
     ['availability', 'Ruumid'],
-    ['activities', 'Ringid'],
+    ['activities', 'Huvitegevus'],
     ['contact', 'Kontakt']
   ]
 
