@@ -19,7 +19,8 @@ const VIEW_LABELS = {
   contact: 'Kontakt',
   login: 'Töötajale',
   instructor: 'Juhendajale',
-  admin: 'Sisuhaldus'
+  admin: 'Sisuhaldus',
+  collectiveDetail: 'Kollektiiv'
 }
 
 const EVENT_TYPE_OPTIONS = ['Eraüritus', 'Koosolek', 'Koolitus', 'Töötuba', 'Kontsert', 'Kogukonnaüritus', 'Muu']
@@ -1147,7 +1148,7 @@ function LoginView({ setView, setStaffRole, setStaffUser, setIsAdminUnlocked, se
   )
 }
 
-function InstructorView({ events, activities, roomDayIndex, onUsageCreated, initialInstructor, clearInstructorSession, setView }) {
+function InstructorView({ events, activities, roomDayIndex, onUsageCreated, initialInstructor, clearInstructorSession, setView, onOpenCollectiveDetail }) {
   const [instructor, setInstructor] = useState(initialInstructor || null)
   const [selectedRoomId, setSelectedRoomId] = useState(initialInstructor?.roomId || '')
   const [message, setMessage] = useState('')
@@ -1323,7 +1324,7 @@ function InstructorView({ events, activities, roomDayIndex, onUsageCreated, init
           </div>
         </section>
       </div>
-      <CollectiveManagement selfOnly />
+      <CollectiveManagement selfOnly onOpenDetail={onOpenCollectiveDetail} />
     </Page>
   )
 }
@@ -1656,7 +1657,7 @@ function UserManagement({ role }) {
   )
 }
 
-function CollectiveManagement({ selfOnly = false, allowCreate = true }) {
+function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDetail }) {
   const [collectives, setCollectives] = useState([])
   const [leaders, setLeaders] = useState([])
   const [busy, setBusy] = useState(false)
@@ -1751,10 +1752,10 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true }) {
           const leader = leaders.find((user) => user.id === collective.leaderUserId)
           const room = getRoomById(collective.roomId)
           const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
-          return <article key={collective.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+          return <article key={collective.id} onClick={() => onOpenDetail?.(collective)} className="cursor-pointer rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 transition hover:bg-white hover:shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{leader?.name || collective.leaderEmail} · {room.house} · {room.name}</p><p className="text-xs font-bold text-slate-500">{day} {collective.startTime}–{collective.endTime} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p>{collective.contactEmail && <p className="mt-1 text-xs text-slate-600">{collective.contactEmail}{collective.phone ? ` · ${collective.phone}` : ''}</p>}</div>
-              <div className="flex gap-2"><button onClick={() => { setEditingId(collective.id); setForm({ name: collective.name, leaderUserId: collective.leaderUserId, roomId: collective.roomId, weekday: collective.weekday, startTime: collective.startTime, endTime: collective.endTime, scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: collective.contactEmail || '', phone: collective.phone || '', website: collective.website || '', socialMedia: collective.socialMedia || '', description: collective.description || '' }) }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda</button><button onClick={() => toggleActive(collective)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button></div>
+              <div className="flex gap-2"><button onClick={(event) => { event.stopPropagation(); setEditingId(collective.id); setForm({ name: collective.name, leaderUserId: collective.leaderUserId, roomId: collective.roomId, weekday: collective.weekday, startTime: collective.startTime, endTime: collective.endTime, scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: collective.contactEmail || '', phone: collective.phone || '', website: collective.website || '', socialMedia: collective.socialMedia || '', description: collective.description || '' }) }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda</button><button onClick={(event) => { event.stopPropagation(); toggleActive(collective) }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button></div>
             </div>
           </article>
         })}
@@ -1764,7 +1765,42 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true }) {
   )
 }
 
-function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bookings, setBookings, refreshData, setSheetUsages }) {
+function CollectiveDetailView({ collective, onBack, onEdit }) {
+  if (!collective) {
+    return <Page><SectionHeader eyebrow="Kollektiiv" title="Kollektiivi ei leitud" text="Valitud kollektiivi andmeid ei õnnestunud laadida." /><button onClick={onBack} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Tagasi</button></Page>
+  }
+  const room = getRoomById(collective.roomId)
+  const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
+  return (
+    <Page>
+      <button onClick={onBack} className="mb-5 rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-800 ring-1 ring-slate-200">← Tagasi kollektiivide juurde</button>
+      <SectionHeader eyebrow="Kollektiiv" title={collective.name} text={collective.description || 'Kollektiivi avalik tutvustus puudub.'} />
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Kontakt ja juhendaja</h2>
+          <div className="mt-4 space-y-2 text-sm text-slate-700">
+            <p><b>Juhendaja e-post:</b> {collective.leaderEmail || 'Määramata'}</p>
+            <p><b>Kollektiivi e-post:</b> {collective.contactEmail || 'Määramata'}</p>
+            {collective.phone && <p><b>Telefon:</b> {collective.phone}</p>}
+            {collective.website && <p><b>Koduleht:</b> {collective.website}</p>}
+            {collective.socialMedia && <p><b>Sotsiaalmeedia:</b> {collective.socialMedia}</p>}
+          </div>
+        </section>
+        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Proovigraafik</h2>
+          <div className="mt-4 space-y-2 text-sm text-slate-700">
+            <p><b>Koht:</b> {room.house} · {room.name}</p>
+            <p><b>Aeg:</b> {day} {collective.startTime}–{collective.endTime}</p>
+            <p><b>Staatus:</b> {collective.active ? 'Aktiivne' : 'Peatatud'}</p>
+          </div>
+        </section>
+      </div>
+      <button onClick={() => onEdit?.(collective)} className="mt-5 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Muuda kollektiivi andmeid</button>
+    </Page>
+  )
+}
+
+function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bookings, setBookings, refreshData, setSheetUsages, onOpenCollectiveDetail }) {
   const role = roles.find((r) => r.id === selectedRole)
   const pending = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'pending')
   const confirmed = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'published')
@@ -1833,7 +1869,7 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
         <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Ringe</p><p className="mt-2 text-4xl font-black">{activities.length}</p></div>
       </div>
       <UserManagement role={selectedRole} />
-      <CollectiveManagement allowCreate={false} />
+      <CollectiveManagement allowCreate={false} onOpenDetail={onOpenCollectiveDetail} />
       <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} roomDayIndex={roomDayIndex} onCreated={handleAdminUsageCreated} refreshData={refreshData} />
       <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1858,6 +1894,8 @@ export default function App() {
   const [staffUser, setStaffUser] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [selectedEventId, setSelectedEventId] = useState(null)
+  const [selectedCollective, setSelectedCollective] = useState(null)
+  const [collectiveDetailOrigin, setCollectiveDetailOrigin] = useState('admin')
   const [bookingDraft, setBookingDraft] = useState(null)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false)
   const [sheetUsages, setSheetUsages] = useState([])
@@ -1938,6 +1976,12 @@ export default function App() {
     setView('eventDetail')
   }
 
+  function openCollectiveDetail(collective) {
+    setSelectedCollective(collective)
+    setCollectiveDetailOrigin(view === 'instructor' ? 'instructor' : 'admin')
+    setView('collectiveDetail')
+  }
+
   return (
     <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
       <Header view={view} setView={setView} isAdminUnlocked={isAdminUnlocked} staffRole={staffRole} />
@@ -1968,9 +2012,10 @@ export default function App() {
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
-      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} roomDayIndex={roomDayIndex} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
+      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} roomDayIndex={roomDayIndex} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} onOpenCollectiveDetail={openCollectiveDetail} />}
       {view === 'login' && <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
-      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} roomDayIndex={roomDayIndex} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} roomDayIndex={roomDayIndex} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} onOpenCollectiveDetail={openCollectiveDetail} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'collectiveDetail' && <CollectiveDetailView collective={selectedCollective} onBack={() => setView(collectiveDetailOrigin)} onEdit={() => setView(collectiveDetailOrigin)} />}
       <MobileNav view={view} setView={setView} />
     </div>
   )

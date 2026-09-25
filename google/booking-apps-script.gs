@@ -515,6 +515,7 @@ function validateCollectivePayload_(payload, existingId) {
   const leader = findUserById_(payload.leaderUserId)
   if (!leader || !leader.active || leader.role !== 'collective') throw new Error('Vali aktiivne kollektiivijuhi kasutaja.')
   if (!Object.prototype.hasOwnProperty.call(ROOM_CONFIG, String(payload.roomId || ''))) throw new Error('Vali kehtiv prooviruumi RoomID.')
+  if (!leader.allowedRoomIds.includes(String(payload.roomId))) throw new Error('Valitud prooviruumi ei ole juhile lubatud.')
   const weekday = Number(payload.weekday)
   if (weekday < 1 || weekday > 7) throw new Error('Proovipäev ei sobi.')
   const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/
@@ -962,12 +963,14 @@ function createUsage_(payload) {
 
   sheet.appendRow(headers.map((header) => safeCell_(rowObject[header] !== undefined ? rowObject[header] : '')))
 
-  MailApp.sendEmail({
-    to: DEFAULT_EMAIL,
-    subject: `Uus juhendaja sisestus: ${payload.collective || payload.name || ''}`,
-    htmlBody: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;"><h2>Uus juhendaja sisestus</h2><p><b>ID:</b> ${escapeHtml_(usageId)}</p><p><b>Kollektiiv:</b> ${escapeHtml_(payload.collective || '')}</p><p><b>Aeg:</b> ${escapeHtml_(payload.date || '')} ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p><p><b>Ruum:</b> ${escapeHtml_(payload.house || '')} / ${escapeHtml_(payload.roomName || '')}</p><p><b>Avaliku kalendri tekst:</b> ${escapeHtml_(payload.publicTitle || '')}</p><p>Sisesta Kultuuripesa töölauda ja kinnita või muuda kirje.</p></div>`,
-    name: ORGANIZATION_NAME
-  })
+  if (!payload.suppressStaffEmail) {
+    MailApp.sendEmail({
+      to: DEFAULT_EMAIL,
+      subject: `Uus juhendaja sisestus: ${payload.collective || payload.name || ''}`,
+      htmlBody: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;"><h2>Uus juhendaja sisestus</h2><p><b>ID:</b> ${escapeHtml_(usageId)}</p><p><b>Kollektiiv:</b> ${escapeHtml_(payload.collective || '')}</p><p><b>Aeg:</b> ${escapeHtml_(payload.date || '')} ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p><p><b>Ruum:</b> ${escapeHtml_(payload.house || '')} / ${escapeHtml_(payload.roomName || '')}</p><p><b>Avaliku kalendri tekst:</b> ${escapeHtml_(payload.publicTitle || '')}</p><p>Sisesta Kultuuripesa töölauda ja kinnita või muuda kirje.</p></div>`,
+      name: ORGANIZATION_NAME
+    })
+  }
 
   return { ok: true, bookingId: usageId, message: 'Sisestus saadeti kinnitamiseks.' }
 }
