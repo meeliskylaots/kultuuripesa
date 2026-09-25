@@ -422,13 +422,15 @@ function getFreeSlots(items) {
   return free.filter((slot) => slot.end - slot.start >= 30)
 }
 
-function Header({ view, setView }) {
+function Header({ view, setView, isAdminUnlocked, staffRole }) {
   const nav = [
     ['events', 'Sündmused'],
     ['availability', 'Ruumid'],
     ['activities', 'Huvitegevus'],
     ['contact', 'Kontakt']
   ]
+  const staffView = isAdminUnlocked && staffRole ? 'admin' : 'login'
+  const staffLabel = isAdminUnlocked && staffRole ? 'Sisuhaldus' : 'Töötajale'
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -445,9 +447,9 @@ function Header({ view, setView }) {
             <button key={id} onClick={() => setView(id)} className={cx('hover:text-emerald-700', (view === id || (id === 'availability' && ['roomDetail', 'booking'].includes(view))) && 'text-emerald-700')}>{label}</button>
           ))}
         </nav>
-        <button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100 md:hidden">Töötajale</button>
+        <button onClick={() => setView(staffView)} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100 md:hidden">{staffLabel}</button>
         <div className="hidden gap-2 md:flex">
-          <button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">Töötajale</button>
+          <button onClick={() => setView(staffView)} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">{staffLabel}</button>
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-200">Vaata sündmusi</button>
           <button onClick={() => setView('availability')} className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</button>
         </div>
@@ -1732,7 +1734,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} isAdminUnlocked={isAdminUnlocked} staffRole={staffRole} />
       {isAdminUnlocked && <div className="mx-auto flex max-w-7xl items-center justify-end gap-3 px-4 py-2 text-sm">
         <span>{roles.find(role => role.id === staffRole)?.label}</span>
         <button className="rounded-xl bg-slate-100 px-4 py-3 font-bold" onClick={async () => {
