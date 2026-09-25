@@ -1637,6 +1637,11 @@ function CollectiveManagement({ selfOnly = false }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState('')
+  const activeCollectiveLeaders = (userResult) => (userResult.users || []).filter((user) => {
+    const role = String(user?.role || '').trim().toLowerCase()
+    const active = user?.active === true || ['true', 'jah', 'yes', '1'].includes(String(user?.active || '').trim().toLowerCase())
+    return role === 'collective' && active
+  })
   const [form, setForm] = useState({
     name: '', leaderUserId: '', roomId: rentalRooms[0]?.id || '', weekday: '1',
     startTime: '19:00', endTime: '21:00', scheduleStart: todayISO(), scheduleEnd: todayISO(),
@@ -1650,7 +1655,7 @@ function CollectiveManagement({ selfOnly = false }) {
       if (!collectiveResult?.ok) throw new Error(collectiveResult?.error || 'Kollektiivide laadimine ebaõnnestus.')
       if (!userResult?.ok) throw new Error(userResult?.error || 'Kollektiivijuhtide laadimine ebaõnnestus.')
       setCollectives(collectiveResult.collectives || [])
-      setLeaders((userResult.users || []).filter((user) => user?.role === 'collective' && user.active))
+      setLeaders(activeCollectiveLeaders(userResult))
       if (selfOnly && activeSessionUser?.id) setForm((current) => ({ ...current, leaderUserId: activeSessionUser.id }))
     } catch (loadError) { setError(loadError.message) }
   }
