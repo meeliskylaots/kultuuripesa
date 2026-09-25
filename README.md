@@ -47,3 +47,20 @@ Veerud:
 Juhendaja ID | Nimi | E-post | PIN | Kollektiiv | Rahvamaja | Ruum | RoomID | Aktiivne
 ```
 
+## Kollektiivide haldus
+
+Juhataja või administraator avab `Töötajale` → `Sisuhaldus` → `Kollektiivide haldus`.
+Vali olemasolev aktiivne `collective` rolliga kasutaja, ruum, nädalapäev, kellaaeg ja
+graafiku algus/lõpp ning salvesta. Kordused kirjutatakse olemasoleva `createUsage`
+voo kaudu; server kontrollib iga kuupäeva puhul ruumi puhvrit ja konflikte enne
+salvestamist.
+
+Apps Script loob Google Sheeti lehe `Kollektiivid`, kui seda pole. Veerud on:
+
+```text
+Kollektiivi ID | Nimi | Juhi kasutaja ID | Juhi e-post | Rahvamaja | Ruum | Proovipäev | Algus | Lõpp | Aktiivne
+```
+
+Kollektiivide API (`listCollectives`, `createCollective`, `updateCollective`) nõuab
+aktiivset juhataja või administraatori sessiooni. Pärast Apps Scripti faili asendamist
+loo uus deploy versioon nagu ülal.

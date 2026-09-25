@@ -1573,6 +1573,100 @@ function UserManagement({ role }) {
   )
 }
 
+function CollectiveManagement() {
+  const [collectives, setCollectives] = useState([])
+  const [leaders, setLeaders] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [form, setForm] = useState({
+    name: '', leaderUserId: '', roomId: rentalRooms[0]?.id || '', weekday: '1',
+    startTime: '19:00', endTime: '21:00', scheduleStart: todayISO(), scheduleEnd: todayISO()
+  })
+
+  async function load() {
+    try {
+      const [collectiveResult, userResult] = await Promise.all([
+        jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectives', session: activeSessionToken }),
+        jsonp(bookingSettings.appsScriptUrl, { action: 'listUsers', session: activeSessionToken })
+      ])
+      if (!collectiveResult?.ok) throw new Error(collectiveResult?.error || 'Kollektiivide laadimine ebaõnnestus.')
+      if (!userResult?.ok) throw new Error(userResult?.error || 'Kollektiivijuhtide laadimine ebaõnnestus.')
+      setCollectives(collectiveResult.collectives || [])
+      setLeaders((userResult.users || []).filter((user) => user.role === 'collective' && user.active))
+    } catch (loadError) { setError(loadError.message) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function createCollective() {
+    if (busy) return
+    setError('')
+    setMessage('')
+    if (!form.name.trim() || !form.leaderUserId || !form.scheduleStart || !form.scheduleEnd) {
+      setError('Täida kollektiivi nimi, juht ja proovigraafiku periood.')
+      return
+    }
+    setBusy(true)
+    try {
+      await postToAppsScript({ action: 'createCollective', ...form })
+      setMessage('Kollektiiv ja korduv proovigraafik on loodud.')
+      setForm((current) => ({ ...current, name: '', leaderUserId: '', scheduleStart: todayISO(), scheduleEnd: todayISO() }))
+      await load()
+    } catch (createError) { setError(createError.message) } finally { setBusy(false) }
+  }
+
+  async function toggleActive(collective) {
+    const leader = leaders.find((user) => user.id === collective.leaderUserId)
+    if (!leader) { setError('Kollektiivi juhti ei leitud aktiivsete kasutajate seast.'); return }
+    setError('')
+    try {
+      await postToAppsScript({
+        action: 'updateCollective', collectiveId: collective.id, name: collective.name,
+        leaderUserId: collective.leaderUserId, roomId: collective.roomId, weekday: collective.weekday,
+        startTime: collective.startTime, endTime: collective.endTime, active: !collective.active
+      })
+      await load()
+    } catch (updateError) { setError(updateError.message) }
+  }
+
+  return (
+    <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-xl font-black">Kollektiivide haldus</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Lisa kollektiiv, seo see olemasoleva kollektiivijuhiga ja loo korduvad proovid. Konfliktid kontrollitakse serveris enne salvestamist.</p></div>
+        <button onClick={load} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Värskenda</button>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-2 lg:grid-cols-4">
+        <Field label="Kollektiivi nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Kollektiivijuht" required><select className={inputClass} value={form.leaderUserId} onChange={(e) => setForm({ ...form, leaderUserId: e.target.value })}><option value="">Vali juht</option>{leaders.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}</select></Field>
+        <Field label="Rahvamaja ja ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field>
+        <Field label="Proovipäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
+        <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
+        <Field label="Lõpp" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field>
+        <Field label="Graafiku algus" required><input type="date" min={todayISO()} className={inputClass} value={form.scheduleStart} onChange={(e) => setForm({ ...form, scheduleStart: e.target.value })} /></Field>
+        <Field label="Graafiku lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.scheduleEnd} onChange={(e) => setForm({ ...form, scheduleEnd: e.target.value })} /></Field>
+        <button disabled={busy} onClick={createCollective} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : 'Lisa kollektiiv ja proovid'}</button>
+      </div>
+      {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</p>}
+      {message && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900">{message}</p>}
+      <div className="mt-4 grid gap-3">
+        {collectives.map((collective) => {
+          const leader = leaders.find((user) => user.id === collective.leaderUserId)
+          const room = getRoomById(collective.roomId)
+          const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
+          return <article key={collective.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{leader?.name || collective.leaderEmail} · {room.house} · {room.name}</p><p className="text-xs font-bold text-slate-500">{day} {collective.startTime}–{collective.endTime} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p></div>
+              <button onClick={() => toggleActive(collective)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button>
+            </div>
+          </article>
+        })}
+        {!collectives.length && <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 ring-1 ring-slate-200">Kollektiive ei ole veel loodud.</p>}
+      </div>
+    </section>
+  )
+}
+
 function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bookings, setBookings, refreshData, setSheetUsages }) {
   const role = roles.find((r) => r.id === selectedRole)
   const pending = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'pending')
@@ -1628,6 +1722,7 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
         <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Ringe</p><p className="mt-2 text-4xl font-black">{activities.length}</p></div>
       </div>
       <UserManagement role={selectedRole} />
+      <CollectiveManagement />
       <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} roomDayIndex={roomDayIndex} onCreated={handleAdminUsageCreated} refreshData={refreshData} />
       <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">

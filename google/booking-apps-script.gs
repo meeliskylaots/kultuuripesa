@@ -99,6 +99,12 @@ const CHALLENGE_TTL_SECONDS = 5 * 60
 const LOCKOUT_THRESHOLD = 5
 const LOCKOUT_SECONDS = 15 * 60
 
+const COLLECTIVE_SHEET_NAME = 'Kollektiivid'
+const COLLECTIVE_HEADERS = [
+  'Kollektiivi ID', 'Nimi', 'Juhi kasutaja ID', 'Juhi e-post',
+  'Rahvamaja', 'Ruum', 'Proovipäev', 'Algus', 'Lõpp', 'Aktiivne'
+]
+
 function normalizeEmail_(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -408,6 +414,166 @@ function listUsers_(token) {
   return { ok: true, users: values.slice(1).map((row, index) => publicUser_(userFromRow_(headers, row, index + 2))).filter((user) => user.id) }
 }
 
+function collectivesSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID)
+  let sheet = ss.getSheetByName(COLLECTIVE_SHEET_NAME)
+  if (!sheet) sheet = ss.insertSheet(COLLECTIVE_SHEET_NAME)
+  const lastColumn = Math.max(sheet.getLastColumn(), 1)
+  const existing = sheet.getLastRow() > 0
+    ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String)
+    : []
+  if (existing.length === 0) {
+    sheet.getRange(1, 1, 1, COLLECTIVE_HEADERS.length).setValues([COLLECTIVE_HEADERS])
+    sheet.setFrozenRows(1)
+    return sheet
+  }
+  const headers = existing.slice()
+  COLLECTIVE_HEADERS.forEach((header) => { if (!headers.includes(header)) headers.push(header) })
+  if (headers.length !== existing.length) sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  sheet.setFrozenRows(1)
+  return sheet
+}
+
+function collectiveRows_() {
+  const sheet = collectivesSheet_()
+  const headers = ensureCollectiveHeader_(sheet)
+  const values = sheet.getDataRange().getValues()
+  return { sheet, headers, map: headerMap_(headers), values }
+}
+
+function ensureCollectiveHeader_(sheet) {
+  const lastColumn = Math.max(sheet.getLastColumn(), 1)
+  const existing = sheet.getLastRow() > 0
+    ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String)
+    : []
+  if (existing.length === 0) {
+    sheet.getRange(1, 1, 1, COLLECTIVE_HEADERS.length).setValues([COLLECTIVE_HEADERS])
+    sheet.setFrozenRows(1)
+    return COLLECTIVE_HEADERS.slice()
+  }
+  const headers = existing.slice()
+  COLLECTIVE_HEADERS.forEach((header) => { if (!headers.includes(header)) headers.push(header) })
+  if (headers.length !== existing.length) sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  sheet.setFrozenRows(1)
+  return headers
+}
+
+function collectiveFromRow_(headers, row, rowNumber) {
+  const map = headerMap_(headers)
+  const activeValue = String(row[map['Aktiivne']] === undefined ? 'jah' : row[map['Aktiivne']]).toLowerCase()
+  return {
+    rowNumber,
+    id: String(row[map['Kollektiivi ID']] || ''),
+    name: String(row[map['Nimi']] || ''),
+    leaderUserId: String(row[map['Juhi kasutaja ID']] || ''),
+    leaderEmail: normalizeEmail_(row[map['Juhi e-post']]),
+    house: String(row[map['Rahvamaja']] || ''),
+    roomId: String(row[map['Ruum']] || ''),
+    weekday: String(row[map['Proovipäev']] || ''),
+    startTime: String(row[map['Algus']] || ''),
+    endTime: String(row[map['Lõpp']] || ''),
+    active: !['ei', 'false', '0', 'no'].includes(activeValue)
+  }
+}
+
+function listCollectives_(token) {
+  requireManager_(token)
+  const { headers, values } = collectiveRows_()
+  return {
+    ok: true,
+    collectives: values.slice(1)
+      .map((row, index) => collectiveFromRow_(headers, row, index + 2))
+      .filter((collective) => collective.id)
+  }
+}
+
+function validateCollectivePayload_(payload, existingId) {
+  const name = String(payload.name || '').trim()
+  if (name.length < 2 || name.length > 100) throw new Error('Sisesta kollektiivi nimi.')
+  const leader = findUserById_(payload.leaderUserId)
+  if (!leader || !leader.active || leader.role !== 'collective') throw new Error('Vali aktiivne kollektiivijuhi kasutaja.')
+  if (!Object.prototype.hasOwnProperty.call(ROOM_CONFIG, String(payload.roomId || ''))) throw new Error('Vali kehtiv prooviruumi RoomID.')
+  const weekday = Number(payload.weekday)
+  if (weekday < 1 || weekday > 7) throw new Error('Proovipäev ei sobi.')
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+  if (!timePattern.test(String(payload.startTime)) || !timePattern.test(String(payload.endTime))) throw new Error('Prooviaeg ei sobi.')
+  const toMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
+  if (toMinutes(payload.endTime) <= toMinutes(payload.startTime)) throw new Error('Lõpuaeg peab olema algusajast hilisem.')
+  if (existingId) {
+    const { headers, values } = collectiveRows_()
+    const idCol = headerMap_(headers)['Kollektiivi ID']
+    if (!values.slice(1).some((row) => String(row[idCol]) === String(existingId))) throw new Error('Kollektiivi ei leitud.')
+  }
+  return { name, leader, weekday: String(weekday), roomId: String(payload.roomId), startTime: String(payload.startTime), endTime: String(payload.endTime) }
+}
+
+function weeklyDates_(startISO, endISO, weekday) {
+  const start = new Date(String(startISO) + 'T12:00:00Z')
+  const end = new Date(String(endISO) + 'T12:00:00Z')
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) throw new Error('Proovigraafiku periood ei sobi.')
+  const result = []
+  const cursor = new Date(start)
+  while (cursor <= end) {
+    const isoWeekday = ((cursor.getUTCDay() + 6) % 7) + 1
+    if (isoWeekday === Number(weekday)) result.push(Utilities.formatDate(cursor, 'UTC', 'yyyy-MM-dd'))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return result
+}
+
+function createCollective_(payload) {
+  const actor = requireManager_(payload.sessionToken)
+  const validated = validateCollectivePayload_(payload)
+  const room = ROOM_CONFIG[validated.roomId]
+  const dates = weeklyDates_(payload.scheduleStart, payload.scheduleEnd, validated.weekday)
+  if (dates.length === 0) throw new Error('Valitud perioodis ei ole proovipäeva.')
+  dates.forEach((date) => {
+    const usage = {
+      roomId: validated.roomId, date, startTime: validated.startTime, endTime: validated.endTime,
+      sessionToken: payload.sessionToken, collectiveLeaderId: validated.leader.id,
+      collective: validated.name, publicTitle: validated.name, type: 'Proov',
+      house: room.house, roomName: room.name, displayMode: 'category',
+      suppressStaffEmail: true, notes: 'Kollektiivi korduv proov: ' + validated.name
+    }
+    validateRoomTime_(usage)
+    assertRoomAvailable_(usage)
+  })
+  const sheet = collectivesSheet_()
+  const headers = ensureCollectiveHeader_(sheet)
+  const id = 'KOL-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss') + '-' + Math.floor(Math.random() * 900 + 100)
+  sheet.appendRow(headers.map((header) => safeCell_({
+    'Kollektiivi ID': id, 'Nimi': validated.name, 'Juhi kasutaja ID': validated.leader.id,
+    'Juhi e-post': validated.leader.email, 'Rahvamaja': room.house, 'Ruum': validated.roomId,
+    'Proovipäev': validated.weekday, 'Algus': validated.startTime, 'Lõpp': validated.endTime, 'Aktiivne': 'jah'
+  }[header] || '')))
+  dates.forEach((date) => createUsage_({
+    action: 'createUsage', sessionToken: payload.sessionToken, roomId: validated.roomId, date,
+    startTime: validated.startTime, endTime: validated.endTime, collectiveLeaderId: validated.leader.id,
+    collective: validated.name, publicTitle: validated.name, type: 'Proov',
+    house: room.house, roomName: room.name, displayMode: 'category',
+    suppressStaffEmail: true, notes: 'Kollektiivi korduv proov: ' + validated.name
+  }))
+  return { ok: true, collective: collectiveFromRow_(headers, sheet.getRange(sheet.getLastRow(), 1, 1, headers.length).getValues()[0], sheet.getLastRow()) }
+}
+
+function updateCollective_(payload) {
+  requireManager_(payload.sessionToken)
+  const validated = validateCollectivePayload_(payload, payload.collectiveId)
+  const { sheet, headers, map, values } = collectiveRows_()
+  const idCol = map['Kollektiivi ID']
+  const index = values.findIndex((row, rowIndex) => rowIndex > 0 && String(row[idCol]) === String(payload.collectiveId))
+  if (index < 1) throw new Error('Kollektiivi ei leitud.')
+  const row = index + 1
+  const changes = {
+    'Nimi': validated.name, 'Juhi kasutaja ID': validated.leader.id, 'Juhi e-post': validated.leader.email,
+    'Rahvamaja': ROOM_CONFIG[validated.roomId].house, 'Ruum': validated.roomId,
+    'Proovipäev': validated.weekday, 'Algus': validated.startTime, 'Lõpp': validated.endTime,
+    'Aktiivne': payload.active === false ? 'ei' : 'jah'
+  }
+  Object.keys(changes).forEach((header) => setCell_(sheet, map, row, header, changes[header]))
+  return { ok: true, collective: collectiveFromRow_(headers, sheet.getRange(row, 1, 1, headers.length).getValues()[0], row) }
+}
+
 function manageUser_(payload) {
   const actor = requireManager_(payload.sessionToken)
   const target = findUserById_(payload.userId)
@@ -513,6 +679,7 @@ function doGet(e) {
     else if (action === 'bootstrapStatus') data = bootstrapStatus_()
     else if (action === 'list') data = listBookings_(params.session)
     else if (action === 'listUsers') data = listUsers_(params.session)
+    else if (action === 'listCollectives') data = listCollectives_(params.session)
     else if (action === 'operationStatus') data = operationStatus_(params.requestId, params.session)
     else data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
   } catch (error) { data = { ok: false, error: String(error) } }
@@ -539,6 +706,10 @@ function doPost(e) {
       result = createUsage_(payload)
     } else if (payload.action === 'createUser') {
       result = createUser_(payload)
+    } else if (payload.action === 'createCollective') {
+      result = createCollective_(payload)
+    } else if (payload.action === 'updateCollective') {
+      result = updateCollective_(payload)
     } else if (payload.action === 'manageUser') {
       result = manageUser_(payload)
     } else if (payload.action === 'logout') {
@@ -680,6 +851,14 @@ function createUsage_(payload) {
     payload.status = payload.status === 'kinnitatud' ? 'kinnitatud' : 'ootel'
     payload.name = actor.name
     payload.email = actor.email
+    if (payload.collectiveLeaderId) {
+      const leader = findUserById_(payload.collectiveLeaderId)
+      if (!leader || !leader.active || leader.role !== 'collective') throw new Error('Kollektiivijuhi kasutaja ei sobi.')
+      payload.instructorId = leader.id
+      payload.name = leader.name
+      payload.email = leader.email
+      payload.collective = payload.collective || leader.collective
+    }
   } else {
     throw new Error('Selle toimingu jaoks puudub õigus.')
   }
