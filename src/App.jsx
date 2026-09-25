@@ -3,10 +3,7 @@ import {
   bookingSettings,
   filters,
   houses,
-  initialActivities,
-  initialEvents,
   initialRequests,
-  instructors,
   rentalRooms,
   rentalServices,
   roles
@@ -75,6 +72,10 @@ function recurrenceSummary(form) {
 }
 
 
+const todayISO = () => { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const value = Object.fromEntries(parts.map(part => [part.type, part.value])); return `${value.year}-${value.month}-${value.day}` }
+let activeAdminPin = ''
+let activeInstructorPin = ''
+
 function cx(...classes) {
   return classes.filter(Boolean).join(' ')
 }
@@ -106,12 +107,12 @@ function isoDate(year, monthIndex, day) {
 }
 
 function monthLabel(dateISO) {
-  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date('2026-06-01T12:00:00')
+  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date(`${todayISO().slice(0, 7)}-01T12:00:00`)
   return base.toLocaleDateString('et-EE', { month: 'long', year: 'numeric' })
 }
 
 function shiftMonth(dateISO, amount) {
-  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date('2026-06-01T12:00:00')
+  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date(`${todayISO().slice(0, 7)}-01T12:00:00`)
   base.setMonth(base.getMonth() + amount)
   return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-01`
 }
@@ -199,16 +200,19 @@ function bookingToCalendarEvent(item) {
 
 function jsonp(url, params = {}) {
   return new Promise((resolve, reject) => {
-    if (!url) return resolve({ ok: false, usages: [], pending: [] })
+    if (!url) return reject(new Error('Teenuse aadress puudub.'))
     const callbackName = `kpJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`
     const script = document.createElement('script')
     const search = new URLSearchParams({ ...params, callback: callbackName })
+    const timeout = setTimeout(() => { delete window[callbackName]; script.remove(); reject(new Error('Päring aegus.')) }, 12000)
     window[callbackName] = (data) => {
+      clearTimeout(timeout)
       resolve(data)
       delete window[callbackName]
       script.remove()
     }
     script.onerror = () => {
+      clearTimeout(timeout)
       reject(new Error('Andmete laadimine ebaõnnestus.'))
       delete window[callbackName]
       script.remove()
@@ -219,13 +223,31 @@ function jsonp(url, params = {}) {
 }
 
 async function postToAppsScript(payload) {
-  if (!bookingSettings.appsScriptUrl) return
+  if (!bookingSettings.appsScriptUrl) throw new Error('Teenuse aadress puudub.')
   await fetch(bookingSettings.appsScriptUrl, {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(payload)
   })
+  // Apps Script does not expose a readable cross-origin POST response. Confirm the
+  // write through the public, contact-free read endpoint before reporting success.
+  const expectedId = String(payload.bookingId || payload.id || '')
+  if (!expectedId) throw new Error('Kirje ID puudub.')
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)))
+    try {
+      const result = await jsonp(bookingSettings.appsScriptUrl, { action: 'list' })
+      const found = result.usages?.find((item) => String(item.bookingId || item.id) === expectedId)
+      if (payload.action === 'updateStatus') {
+        if (payload.status === 'tühistatud') {
+          const adminResult = await jsonp(bookingSettings.appsScriptUrl, { action: 'list', pin: activeAdminPin })
+          if (adminResult.bookings?.some((item) => String(item.bookingId || item.id) === expectedId && item.status === 'tühistatud')) return
+        } else if (found?.status === payload.status) return
+      } else if (found) return
+    } catch (error) { /* Try again while the sheet update becomes visible. */ }
+  }
+  throw new Error('Salvestust ei saanud kinnitada. Kontrolli töölauda enne uuesti saatmist.')
 }
 
 function getBlockingItems(events, activities) {
@@ -566,7 +588,7 @@ function RoomCard({ room, onOpen }) {
 }
 
 function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities }) {
-  const current = selectedDate || '2026-06-01'
+  const current = selectedDate || todayISO()
   const base = new Date(`${current.slice(0, 7)}-01T12:00:00`)
   const year = base.getFullYear()
   const month = base.getMonth()
@@ -614,7 +636,7 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
 }
 
 function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, setView, setBookingDraft }) {
-  const [selectedDate, setSelectedDate] = useState('2026-06-20')
+  const [selectedDate, setSelectedDate] = useState(todayISO())
   const [startTime, setStartTime] = useState('18:00')
   const [endTime, setEndTime] = useState('22:00')
   const room = getRoomById(selectedRoomId)
@@ -633,7 +655,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
         <div>
           <div className="mb-4 flex flex-wrap gap-2">
             {rentalRooms.map((item) => (
-              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate('2026-06-20') }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
+              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate(todayISO()) }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
             ))}
           </div>
           <SectionHeader eyebrow={room.house} title={room.name} text={room.description} compact />
@@ -729,7 +751,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   const [step, setStep] = useState(initialDraft ? 2 : 1)
   const [form, setForm] = useState({
     roomId: initialDraft?.roomId || rentalRooms[0].id,
-    date: initialDraft?.date || '2026-06-20',
+    date: initialDraft?.date || todayISO(),
     startTime: initialDraft?.startTime || '18:00',
     endTime: initialDraft?.endTime || '22:00',
     eventType: '',
@@ -905,14 +927,16 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
   const [instructorPin, setInstructorPin] = useState('')
   const isInstructorRole = selectedRole === 'collective'
 
-  function enterAdmin() {
-    if (adminPin === bookingSettings.adminPin) {
+  async function enterAdmin() {
+    try {
+      const result = await jsonp(bookingSettings.appsScriptUrl, { action: 'adminAuth', pin: adminPin })
+      if (!result.ok) throw new Error('PIN-kood ei sobi.')
+      activeAdminPin = adminPin
+      setAdminPin('')
       setIsAdminUnlocked(true)
       setError('')
       setView('admin')
-    } else {
-      setError('PIN-kood ei sobi.')
-    }
+    } catch (error) { setError('Töölauda ei saanud avada. Kontrolli PIN-i ja ühendust.') }
   }
 
   async function enterInstructor() {
@@ -926,6 +950,7 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
       if (bookingSettings.appsScriptUrl) {
         const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', pin: normalizedPin })
         if (data?.ok && data.instructor) {
+          activeInstructorPin = normalizedPin
           setInstructorSession(data.instructor)
           setView('instructor')
           return
@@ -935,13 +960,7 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
       // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
     }
 
-    const local = instructors.find((item) => item.active && String(item.pin) === normalizedPin)
-    if (local) {
-      setInstructorSession(local)
-      setView('instructor')
-    } else {
-      setError('PIN-kood ei sobi aktiivse juhendaja andmetega.')
-    }
+    setError('Juhendaja kontroll ebaõnnestus. Kontrolli PIN-i ja ühendust.')
   }
 
   return (
@@ -963,7 +982,7 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
           <h2 className="text-xl font-black">2. Sisene</h2>
           {!isInstructorRole ? (
             <>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Juhataja ja administraator sisenevad PIN-koodiga. Vaikimisi PIN on prototüübis <b>2026</b>.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Sisesta juhataja määratud PIN-kood.</p>
               <input value={adminPin} onChange={(e) => setAdminPin(e.target.value)} type="password" className="mt-4 w-full rounded-xl bg-slate-50 px-4 py-3 text-lg font-black tracking-widest outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="PIN" />
               {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
               <button onClick={enterAdmin} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava töölaud</button>
@@ -975,7 +994,7 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
               <Field label="Isiklik PIN" required><input type="password" className={inputClass} value={instructorPin} onChange={(e) => setInstructorPin(e.target.value)} placeholder="PIN" /></Field>
               {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
               <button onClick={enterInstructor} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava juhendaja vorm</button>
-              <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis-PIN-id: 4821 või 7394.</p>
+
             </>
           )}
         </section>
@@ -1015,6 +1034,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
       if (bookingSettings.appsScriptUrl) {
         const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', pin: normalizedPin })
         if (data?.ok && data.instructor) {
+          activeInstructorPin = normalizedPin
           enterInstructor(data.instructor)
           return
         }
@@ -1023,16 +1043,12 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
       // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
     }
 
-    const local = instructors.find((item) => item.active && String(item.pin) === normalizedPin)
-    if (local) {
-      enterInstructor(local)
-    } else {
-      setAuthError('PIN-kood ei sobi aktiivse juhendaja andmetega.')
-    }
+    setAuthError('Juhendaja kontroll ebaõnnestus. Kontrolli PIN-i ja ühendust.')
   }
 
   function logout() {
     setInstructor(null)
+    activeInstructorPin = ''
     setSelectedRoomId('')
     setPin('')
     setMessage('')
@@ -1050,7 +1066,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
     setInstructor(activeInstructor)
     setSelectedRoomId(firstRoom.id)
     setForm((current) => {
-      const date = current.date || '2026-06-09'
+      const date = current.date || todayISO()
       return { ...current, publicTitle: activeInstructor.collective || '', date, recurrenceStart: current.recurrenceStart || date, recurrenceEnd: current.recurrenceEnd || date, weekday: current.weekday || weekdayValue(date) }
     })
   }
@@ -1069,7 +1085,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
           <Field label="Isiklik PIN" required><input type="password" className={inputClass} value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN" /></Field>
           {authError && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{authError}</p>}
           <button onClick={authenticate} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava vorm</button>
-          <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis-PIN-id: 4821 või 7394. Päris kasutuses määrab PIN-id juhataja.</p>
+
         </section>
       </Page>
     )
@@ -1097,6 +1113,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
       const usageId = `${form.recurrence === 'weekly' ? 'KR' : 'JR'}-${Date.now()}-${index + 1}`
       const payload = {
         action: 'createUsage',
+        instructorPin: activeInstructorPin,
         bookingId: usageId,
         type: form.requestType,
         status: 'ootel',
@@ -1174,7 +1191,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
           <button disabled={!canSubmit} onClick={submitInstructorRequest} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button>
         </section>
         <section className="space-y-5">
-          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || '2026-06-09'} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} />
+          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || todayISO()} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} />
           <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black">Valitud ruumi kasutus</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Kalender näitab valitud rahvamaja ja ruumi kinnitatud ning ootel kasutusi. Päeva valimisel näed täpseid aegu ja vabu vahemikke.</p>
@@ -1192,9 +1209,9 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
   const [form, setForm] = useState({
     requestType: 'Proov',
     recurrence: 'single',
-    date: '2026-06-09',
-    recurrenceStart: '2026-06-09',
-    recurrenceEnd: '2026-06-09',
+    date: todayISO(),
+    recurrenceStart: todayISO(),
+    recurrenceEnd: todayISO(),
     weekday: '1',
     startTime: '19:00',
     endTime: '21:00',
@@ -1220,6 +1237,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
       const usageId = `${status === 'kinnitatud' ? 'KT' : 'OT'}-${Date.now()}-${index + 1}`
       const payload = {
         action: 'createUsage',
+        adminPin: activeAdminPin,
         bookingId: usageId,
         type: form.requestType,
         status,
@@ -1342,21 +1360,18 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
 
   async function approve(booking) {
     const id = booking.bookingId || booking.id
-    const updated = { ...booking, status: 'kinnitatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' }
-    updateLocalBooking(id, updated)
-    setSheetUsages((current) => {
-      const exists = current.some((item) => String(item.bookingId || item.id) === String(id))
-      return exists ? current.map((item) => String(item.bookingId || item.id) === String(id) ? updated : item) : [...current, updated]
-    })
-    await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'kinnitatud', publicTitle: updated.publicTitle })
-    setTimeout(refreshData, 900)
+    try {
+      await postToAppsScript({ action: 'updateStatus', adminPin: activeAdminPin, bookingId: id, status: 'kinnitatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      await refreshData()
+    } catch (error) { window.alert(error.message) }
   }
 
   async function cancel(booking) {
     const id = booking.bookingId || booking.id
-    updateLocalBooking(id, { status: 'tühistatud' })
-    await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
-    setTimeout(refreshData, 900)
+    try {
+      await postToAppsScript({ action: 'updateStatus', adminPin: activeAdminPin, bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      await refreshData()
+    } catch (error) { window.alert(error.message) }
   }
 
   function updatePublicTitle(id, value) {
@@ -1415,25 +1430,28 @@ export default function App() {
   const [sheetUsages, setSheetUsages] = useState([])
   const [bookings, setBookings] = useState([])
   const [instructorSession, setInstructorSession] = useState(null)
-  const [dataStatus, setDataStatus] = useState('Andmeid ei ole veel laaditud.')
+  const [dataStatus, setDataStatus] = useState('Laen ruumikalendrit...')
+  const [calendarReady, setCalendarReady] = useState(false)
 
   async function refreshData() {
+    setCalendarReady(false)
     if (!bookingSettings.appsScriptUrl) {
-      setDataStatus('Apps Scripti URL puudub, kasutatakse näidisandmeid.')
+      setDataStatus('Ruumikalendri ühendus puudub. Broneerimine ei ole saadaval.')
       return
     }
     try {
       setDataStatus('Laen Google Sheetist andmeid...')
-      const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'list' })
+      const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'list', ...(activeAdminPin ? { pin: activeAdminPin } : {}) })
       if (data?.ok) {
+        setCalendarReady(true)
         setBookings(data.bookings || [])
         setSheetUsages(data.usages || [])
         setDataStatus(`Andmed laaditud: ${(data.usages || []).filter(item => normalizeStatusForCalendar(item.status) === 'published').length} kinnitatud ja ${(data.bookings || []).filter(item => normalizeStatusForCalendar(item.status) === 'pending').length} ootel broneeringut.`)
       } else {
-        setDataStatus('Google Sheetist andmete laadimine ei õnnestunud, kasutatakse näidisandmeid.')
+        setDataStatus('Ruumikalendri laadimine ebaõnnestus. Broneerimine ei ole saadaval.')
       }
     } catch (error) {
-      setDataStatus('Andmete laadimine ebaõnnestus, kasutatakse näidisandmeid.')
+      setDataStatus('Ruumikalendri laadimine ebaõnnestus. Broneerimine ei ole saadaval.')
     }
   }
 
@@ -1477,8 +1495,8 @@ export default function App() {
     return Array.from(map.values())
   }, [sheetUsages, bookings])
   const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
-  const events = useMemo(() => [...initialEvents, ...sheetEvents], [sheetEvents])
-  const activities = initialActivities
+  const events = useMemo(() => sheetEvents, [sheetEvents])
+  const activities = []
   const selectedEvent = useMemo(() => events.find((event) => String(event.id) === String(selectedEventId)), [events, selectedEventId])
 
   function openEventDetails(event) {
@@ -1495,7 +1513,8 @@ export default function App() {
       {view === 'eventDetail' && <EventDetailView event={selectedEvent} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
-      {view === 'booking' && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
+      {view === 'booking' && !calendarReady && <Page><p role="alert">Ruumikalender ei ole saadaval. Palun proovi hiljem uuesti või kirjuta rahvamajale.</p></Page>}
+      {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
