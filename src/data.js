@@ -196,17 +196,31 @@ export const houses = [
     id: 'rannu',
     name: 'Rannu rahvamaja',
     active: true,
-    location: 'Rannu alevik',
-    description: 'Piirkondlik kultuuri- ja kooskäimiskoht, kus toimuvad kontserdid, huviringid, kogukonnaõhtud ja kohtumised.',
-    tags: ['kontserdid', 'rahvakultuur', 'koosolekud', 'eakate tegevused']
+    location: 'Elva tee 7, Rannu alevik, Elva vald, 61120 Tartumaa',
+    description: 'Rannu rahvamajas toimuvad kontserdid, teatrietendused, tantsuõhtud ja huviringid. Majas asuvad ka Rannu kandi muuseum, raamatukogu ja teenuskeskus.',
+    email: 'kulli.kornav@elva.ee',
+    phone: '+372 5329 2468',
+    contactPerson: 'Külli Kornav, kultuurikorraldaja',
+    website: 'https://elvakultuur.ee/rannu-rahvamaja/tutvustus/',
+    activitiesUrl: 'https://elvakultuur.ee/rannu-rahvamaja/huviringid/',
+    collectivesUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/',
+    collectives: ['Naisrahvatantsurühm Kati', 'Segarahvatantsu- ja folkloorirühm Kolumats', 'Laulu ja tantsurühm Liisud'],
+    tags: ['teater', 'rahvatants', 'huviringid', 'muuseum']
   },
   {
     id: 'konguta',
     name: 'Konguta rahvamaja',
     active: true,
-    location: 'Annikoru küla',
-    description: 'Kogukondlik kultuuripesa, mis sobib töötubadeks, perepäevadeks, noorte algatusteks ja väliala sündmusteks.',
-    tags: ['töötoad', 'pered', 'noored', 'väliala']
+    location: 'Annikoru küla, Elva vald, 61202 Tartumaa',
+    description: 'Annikoru külas asuv rahvamaja ühendab kohalikke kultuuriharrastajaid. Lähedal Annikoru puhkepargis asub ka laululava.',
+    email: 'konguta.rahvamaja@elva.ee',
+    phone: '+372 525 9576',
+    contactPerson: 'Meelis Külaots, juhataja',
+    website: 'https://elvakultuur.ee/konguta-rahvamaja/tutvustus/',
+    activitiesUrl: 'https://elvakultuur.ee/konguta-rahvamaja/huviringid/',
+    collectivesUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/',
+    collectives: ['Konguta segakoor', 'Segarühm Kavalik', 'Tantsurühm Pihlakobar', 'Naisansambel MESI'],
+    tags: ['segakoor', 'rahvatants', 'huviringid', 'laululava']
   },
   {
     id: 'puhja',

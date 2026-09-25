@@ -1018,7 +1018,7 @@ function ActivitiesView({ activities }) {
 }
 
 function HousesView() {
-  return <Page><SectionHeader eyebrow="Rahvamajad" title="Rahvamajad" text="Leia oma kodukandi rahvamaja ning tutvu selle tegevuste ja ruumidega." /><div className="grid gap-5 md:grid-cols-2">{activeHouses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></Page>
+  return <Page><SectionHeader eyebrow="Rahvamajad" title="Rahvamajad" text="Leia oma kodukandi rahvamaja ning tutvu selle tegevuste ja ruumidega." /><div className="grid gap-5 md:grid-cols-2">{activeHouses.map((house) => <article key={house.id} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div><h4 className="mt-6 font-black">Kultuurikollektiivid</h4><ul className="mt-2 list-inside list-disc text-sm leading-7 text-slate-700">{house.collectives?.map((name) => <li key={name}>{name}</li>)}</ul><p className="mt-5 text-sm text-slate-600">{house.contactPerson} · <a className="font-bold text-emerald-800 underline" href={`tel:${house.phone}`}>{house.phone}</a></p><div className="mt-4 flex flex-wrap gap-3 text-sm font-bold"><a href={house.website} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">Rahvamaja tutvustus ↗</a><a href={house.activitiesUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">Huviringid ja ajad ↗</a><a href={house.collectivesUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">Kollektiivide info ↗</a></div></article>)}</div></Page>
 }
 
 function ContactView() {
@@ -1030,6 +1030,9 @@ function ContactView() {
           <article key={house.id} className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h3 className="text-lg font-black">{house.name}</h3>
             <p className="mt-3 text-slate-600">{house.location}</p>
+            <p className="mt-2 text-sm text-slate-600">{house.contactPerson}</p>
+            <a href={`mailto:${house.email}`} className="mt-2 block break-all text-sm font-bold text-emerald-800 underline">{house.email}</a>
+            <a href={`tel:${house.phone}`} className="mt-2 block text-sm font-bold text-emerald-800 underline">{house.phone}</a>
             <div className="mt-5 flex flex-wrap gap-2">
               {house.phone && <a href={`tel:${house.phone}`} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">Helista</a>}
               <a href={`mailto:${house.email || bookingSettings.defaultEmail}?subject=${encodeURIComponent(house.name)}`} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800">Kirjuta</a>
