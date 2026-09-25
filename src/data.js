@@ -2,38 +2,10 @@ export const bookingSettings = {
   appsScriptUrl: 'https://script.google.com/macros/s/AKfycbzdFUJ4VLN_jjgX3KZsGDtwpU6cdBuLlRNGyZRodzIOktR2ZF6IuIGGMe_CV4rlnIe5/exec',
   defaultEmail: 'kultuur@elva.ee',
   clientCopySubject: 'Sinu ruumi kasutamise soov on kätte saadud.',
-  priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.',
-  adminPin: '2026'
+  priceDisclaimer: 'Hind on orienteeruv. Lõpliku hinna, ruumi saadavuse ja tingimused kinnitab rahvamaja töötaja.'
 }
 
 
-
-export const instructors = [
-  {
-    id: 'rahvatants-rannu',
-    name: 'Rahvatantsurühma juhendaja',
-    email: 'juhendaja@example.com',
-    pin: '4821',
-    collective: 'Rahvatants',
-    house: 'Rannu rahvamaja',
-    roomId: 'rannu-saal',
-    room: 'Suur saal',
-    allowedRoomIds: ['rannu-saal', 'rannu-vaike-saal', 'konguta-saal'],
-    active: true
-  },
-  {
-    id: 'kasitoo-konguta',
-    name: 'Käsitööringi juhendaja',
-    email: 'kasitoo@example.com',
-    pin: '7394',
-    collective: 'Käsitöö- ja loovtöötuba',
-    house: 'Konguta rahvamaja',
-    roomId: 'konguta-saal',
-    room: 'Saal',
-    allowedRoomIds: ['konguta-saal', 'konguta-valiala'],
-    active: true
-  }
-]
 
 export const initialEvents = [
   {
