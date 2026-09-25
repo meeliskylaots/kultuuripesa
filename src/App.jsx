@@ -262,7 +262,11 @@ function jsonp(url, params = {}) {
     const callbackName = `kpJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`
     const script = document.createElement('script')
     const search = new URLSearchParams({ ...params, callback: callbackName })
-    const timeout = setTimeout(() => { delete window[callbackName]; script.remove(); reject(new Error('Päring aegus.')) }, 12000)
+    const timeout = setTimeout(() => {
+      delete window[callbackName]
+      script.remove()
+      reject(new Error('Teenuse vastus aegus. Kontrolli ühendust ja Apps Scripti deploy olekut.'))
+    }, 30000)
     window[callbackName] = (data) => {
       clearTimeout(timeout)
       resolve(data)
@@ -306,7 +310,7 @@ async function postToAppsScript(payload) {
       if (!result?.ok) throw new Error(result?.error || 'Salvestamine ebaõnnestus.')
       return result
     } catch (error) {
-      if (error?.message && error.message !== 'Päring aegus.') throw error
+      if (error?.message && !error.message.startsWith('Teenuse vastus aegus.')) throw error
       if (attempt === 7) throw error
     }
   }
