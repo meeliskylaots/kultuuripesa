@@ -311,7 +311,7 @@ async function postToAppsScript(payload) {
   }
   throw new Error('Salvestuse kinnitamine aegus. Kontrolli töölauda enne uuesti saatmist.')
 }
-function getBlockingItems(events, activities) {
+function getBlockingItems(events = [], activities = []) {
   const eventItems = events
     .filter((item) => item.blocksRoom && ['published', 'kinnitatud', 'pending', 'ootel'].includes(normalizeStatusForCalendar(item.status)))
     .map((item) => ({ ...item, sourceType: 'event' }))
@@ -321,7 +321,7 @@ function getBlockingItems(events, activities) {
   return [...eventItems, ...activityItems]
 }
 
-function buildRoomDayIndex(events, activities) {
+function buildRoomDayIndex(events = [], activities = []) {
   const index = new Map()
 
   getBlockingItems(events, activities).forEach((item) => {
@@ -340,7 +340,7 @@ function buildRoomDayIndex(events, activities) {
   return index
 }
 
-function getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex) {
+function getRoomDayItems(roomId, dateISO, events = [], activities = [], roomDayIndex) {
   if (roomDayIndex) {
     return roomDayIndex.get(`${roomId}|${dateISO}`) || []
   }
@@ -366,9 +366,9 @@ function rangesOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart
 }
 
-function getAvailability(roomId, dateISO, startTime, endTime, events, activities) {
+function getAvailability(roomId, dateISO, startTime, endTime, events = [], activities = [], roomDayIndex) {
   const room = getRoomById(roomId)
-  const items = getRoomDayItems(roomId, dateISO, events, activities)
+  const items = getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex)
   const requestedStart = timeToMinutes(startTime)
   const requestedEnd = timeToMinutes(endTime)
   const reservedStart = requestedStart - (room.bufferBeforeMinutes || 0)
@@ -570,13 +570,18 @@ function EventCard({ event, compact = false, onDetails }) {
 function EventsView({ events, openEventDetails }) {
   const [filter, setFilter] = useState('Kõik')
   const [query, setQuery] = useState('')
-  const publicEvents = events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full')
-  const filtered = publicEvents.filter((event) => {
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedQuery(query), 250)
+    return () => clearTimeout(timeout)
+  }, [query])
+  const publicEvents = useMemo(() => events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full'), [events])
+  const filtered = useMemo(() => publicEvents.filter((event) => {
     const text = `${event.title} ${event.house} ${event.audience} ${event.category} ${event.description}`.toLowerCase()
-    const q = text.includes(query.toLowerCase())
+    const q = text.includes(debouncedQuery.toLowerCase())
     const f = filter === 'Kõik' || event.house.includes(filter) || event.audience === filter || event.price === filter || (filter === 'Registreerimisega' && event.registration)
     return q && f
-  })
+  }), [debouncedQuery, filter, publicEvents])
   return (
     <Page>
       <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
@@ -671,7 +676,7 @@ function RoomCard({ room, onOpen }) {
   )
 }
 
-function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities }) {
+function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities, roomDayIndex }) {
   const current = selectedDate || todayISO()
   const base = new Date(`${current.slice(0, 7)}-01T12:00:00`)
   const year = base.getFullYear()
@@ -696,7 +701,7 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
       <div className="grid grid-cols-7 gap-1">
         {cells.map((dateISO, index) => {
           if (!dateISO) return <div key={`empty-${index}`} className="min-h-16 rounded-xl bg-slate-50" />
-          const items = getRoomDayItems(roomId, dateISO, events, activities)
+          const items = getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex)
           const isSelected = dateISO === selectedDate
           const day = Number(dateISO.slice(-2))
           const hasPending = items.some((item) => normalizeStatusForCalendar(item.status) === 'pending')
@@ -719,12 +724,12 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
   )
 }
 
-function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, setView, setBookingDraft }) {
+function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, roomDayIndex, setView, setBookingDraft }) {
   const [selectedDate, setSelectedDate] = useState(todayISO())
   const [startTime, setStartTime] = useState('18:00')
   const [endTime, setEndTime] = useState('22:00')
   const room = getRoomById(selectedRoomId)
-  const availability = getAvailability(room.id, selectedDate, startTime, endTime, events, activities)
+  const availability = getAvailability(room.id, selectedDate, startTime, endTime, events, activities, roomDayIndex)
   const canContinue = availability.status === 'free'
 
   function continueBooking() {
@@ -761,7 +766,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
           </div>
         </div>
         <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
-          <MonthCalendar roomId={room.id} selectedDate={selectedDate} setSelectedDate={setSelectedDate} events={events} activities={activities} />
+          <MonthCalendar roomId={room.id} selectedDate={selectedDate} setSelectedDate={setSelectedDate} events={events} activities={activities} roomDayIndex={roomDayIndex} />
           <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black text-slate-950">Vali kasutusaeg</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast. Kontroll toimub koos puhvriga.</p>
@@ -769,7 +774,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
               <Field label="Algusaeg" required><input type="time" className={inputClass} value={startTime} onChange={(e) => setStartTime(e.target.value)} /></Field>
               <Field label="Lõpuaeg" required><input type="time" className={inputClass} value={endTime} onChange={(e) => setEndTime(e.target.value)} /></Field>
             </div>
-            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} /></div>
+            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} roomDayIndex={roomDayIndex} /></div>
             {availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on esialgu vaba. Ruum hoitakse puhvrit arvestades kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}
             {availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Seda aega ei saa valida.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}
             {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}
@@ -781,9 +786,9 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
   )
 }
 
-function AvailabilityPanel({ events, activities, roomId, dateISO }) {
+function AvailabilityPanel({ events, activities, roomId, dateISO, roomDayIndex }) {
   const room = getRoomById(roomId)
-  const items = getRoomDayItems(roomId, dateISO, events, activities)
+  const items = getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex)
   const freeSlots = getFreeSlots(items)
   return (
     <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -831,7 +836,7 @@ function StepBadge({ step, current, label }) {
   return <div className={cx('rounded-2xl px-3 py-2 text-xs font-black ring-1', step === current ? 'bg-emerald-700 text-white ring-emerald-700' : step < current ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-white text-slate-500 ring-slate-200')}>{step}. {label}</div>
 }
 
-function BookingView({ events, activities, initialDraft, onBookingCreated }) {
+function BookingView({ events, activities, roomDayIndex, initialDraft, onBookingCreated }) {
   const [step, setStep] = useState(initialDraft ? 2 : 1)
   const [form, setForm] = useState({
     roomId: initialDraft?.roomId || rentalRooms[0].id,
@@ -851,7 +856,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   const [submitMessage, setSubmitMessage] = useState('')
   const [sending, setSending] = useState(false)
   const room = getRoomById(form.roomId)
-  const availability = getAvailability(form.roomId, form.date, form.startTime, form.endTime, events, activities)
+  const availability = getAvailability(form.roomId, form.date, form.startTime, form.endTime, events, activities, roomDayIndex)
   const requestedHours = Math.max(0, (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60)
   const billableHours = Math.max(requestedHours, room.minimumHours || 1)
   const selectedServices = rentalServices.filter((service) => form.services.includes(service.id)).map((service) => ({ ...service, total: service.pricing === 'hourly' ? service.price * billableHours : service.price }))
@@ -946,7 +951,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
           <p className="mt-4 text-xs leading-5 text-white/55 lg:mt-5">{bookingSettings.priceDisclaimer}</p>
         </aside>
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-6">
-          {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
+          {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} roomDayIndex={roomDayIndex} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
           {step === 2 && <BookingStepEvent form={form} setForm={setForm} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
           {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
           {step === 4 && <BookingStepContact sending={sending} form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
@@ -961,8 +966,8 @@ function Field({ label, required, children }) {
 }
 const inputClass = 'w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500'
 
-function BookingStepRoom({ form, setForm, availability, room, events, activities, onNext, canNext }) {
-  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
+function BookingStepRoom({ form, setForm, availability, room, events, activities, roomDayIndex, onNext, canNext }) {
+  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} roomDayIndex={roomDayIndex} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
 }
 
 function BookingStepEvent({ form, setForm, onBack, onNext }) {
@@ -1135,7 +1140,7 @@ function LoginView({ setView, setStaffRole, setStaffUser, setIsAdminUnlocked, se
   )
 }
 
-function InstructorView({ events, activities, onUsageCreated, initialInstructor, clearInstructorSession, setView }) {
+function InstructorView({ events, activities, roomDayIndex, onUsageCreated, initialInstructor, clearInstructorSession, setView }) {
   const [instructor, setInstructor] = useState(initialInstructor || null)
   const [selectedRoomId, setSelectedRoomId] = useState(initialInstructor?.roomId || '')
   const [message, setMessage] = useState('')
@@ -1201,11 +1206,11 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   const selectedRoom = getRoomById(selectedRoomId || instructor.roomId)
   const allowedHouses = [...new Set(allowedRooms.map((room) => room.house))]
   const usageDates = usageDatesFromForm(form)
-  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities) }))
+  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex) }))
   const conflictCount = availabilityChecks.filter((item) => item.availability.status !== 'free').length
   const previewCount = usageDates.length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
-  const availability = getAvailability(selectedRoom.id, selectedDateForPanel, form.startTime, form.endTime, events, activities)
+  const availability = getAvailability(selectedRoom.id, selectedDateForPanel, form.startTime, form.endTime, events, activities, roomDayIndex)
   const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
 
   async function submitInstructorRequest() {
@@ -1218,7 +1223,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
-      const itemAvailability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities)
+      const itemAvailability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex)
       const usageId = `${form.recurrence === 'weekly' ? 'KR' : 'JR'}-${Date.now()}-${index + 1}`
       const payload = {
         action: 'createUsage',
@@ -1302,11 +1307,11 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
           <button disabled={!canSubmit} onClick={submitInstructorRequest} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button>
         </section>
         <section className="space-y-5">
-          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || todayISO()} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} />
+          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || todayISO()} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} roomDayIndex={roomDayIndex} />
           <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black">Valitud ruumi kasutus</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Kalender näitab valitud rahvamaja ja ruumi kinnitatud ning ootel kasutusi. Päeva valimisel näed täpseid aegu ja vabu vahemikke.</p>
-            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} /></div>
+            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} roomDayIndex={roomDayIndex} /></div>
           </div>
         </section>
       </div>
@@ -1314,7 +1319,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   )
 }
 
-function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshData }) {
+function AdminUsageForm({ selectedRole, events, activities, roomDayIndex, onCreated, refreshData }) {
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
@@ -1334,7 +1339,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
 
   const selectedRoom = getRoomById(selectedRoomId)
   const usageDates = usageDatesFromForm(form)
-  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities) }))
+  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex) }))
   const conflictCount = availabilityChecks.filter((item) => item.availability.status !== 'free').length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
   const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
@@ -1348,7 +1353,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
     try {
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
-      const availability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities)
+      const availability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex)
       const usageId = `${status === 'kinnitatud' ? 'KT' : 'OT'}-${Date.now()}-${index + 1}`
       const payload = {
         action: 'createUsage',
@@ -1425,7 +1430,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         <b>Eelvaade:</b> {form.recurrence === 'weekly' ? `${recurrenceSummary(form)}. Luuakse ${usageDates.length} kirjet.` : 'Ühekordne tegevus.'}
         {conflictCount > 0 && <span className="mt-1 block font-bold text-rose-800">{conflictCount} kirjet kattub olemasoleva ruumikasutusega. Muuda aega, ruumi või perioodi.</span>}
       </div>
-      <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} /></div>
+      <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} roomDayIndex={roomDayIndex} /></div>
       {message && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{message}</p>}
       <div className="mt-5 flex flex-wrap gap-2">
         <button disabled={!canSubmit} onClick={() => createAdminUsage('ootel')} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800 hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300">Salvesta ootele</button>
@@ -1566,7 +1571,7 @@ function UserManagement({ role }) {
   )
 }
 
-function AdminView({ setView, selectedRole, events, activities, bookings, setBookings, refreshData, setSheetUsages }) {
+function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bookings, setBookings, refreshData, setSheetUsages }) {
   const role = roles.find((r) => r.id === selectedRole)
   const pending = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'pending')
   const confirmed = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'published')
@@ -1621,7 +1626,7 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
         <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Ringe</p><p className="mt-2 text-4xl font-black">{activities.length}</p></div>
       </div>
       <UserManagement role={selectedRole} />
-      <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} onCreated={handleAdminUsageCreated} refreshData={refreshData} />
+      <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} roomDayIndex={roomDayIndex} onCreated={handleAdminUsageCreated} refreshData={refreshData} />
       <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-black">Broneeringud</h2>
@@ -1716,7 +1721,8 @@ export default function App() {
   }, [sheetUsages, bookings])
   const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => item && ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
   const events = useMemo(() => sheetEvents, [sheetEvents])
-  const activities = []
+  const activities = useMemo(() => [], [])
+  const roomDayIndex = useMemo(() => buildRoomDayIndex(events, activities), [events, activities])
   const selectedEvent = useMemo(() => events.find((event) => String(event.id) === String(selectedEventId)), [events, selectedEventId])
 
   function openEventDetails(event) {
@@ -1748,15 +1754,15 @@ export default function App() {
       {view === 'events' && <EventsView events={events} openEventDetails={openEventDetails} />}
       {view === 'eventDetail' && <EventDetailView event={selectedEvent} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
-      {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
+      {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} roomDayIndex={roomDayIndex} setView={setView} setBookingDraft={setBookingDraft} />}
       {view === 'booking' && !calendarReady && <Page><p role="alert">Ruumikalender ei ole saadaval. Palun proovi hiljem uuesti või kirjuta rahvamajale.</p></Page>}
-      {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
+      {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} roomDayIndex={roomDayIndex} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
-      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
+      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} roomDayIndex={roomDayIndex} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
       {view === 'login' && <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
-      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} roomDayIndex={roomDayIndex} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
       <MobileNav view={view} setView={setView} />
     </div>
   )
