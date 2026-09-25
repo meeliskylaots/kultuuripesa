@@ -107,7 +107,7 @@ const COLLECTIVE_CHANGES_SHEET_NAME = 'Kollektiivi muudatused'
 const COLLECTIVE_CHANGE_HEADERS = ['Muudatuse ID', 'Kollektiivi ID', 'Esitaja ID', 'Esitamise aeg', 'Andmed JSON', 'Staatus', 'Otsustaja ID', 'Otsuse aeg']
 const COLLECTIVE_HEADERS = [
   'Kollektiivi ID', 'Nimi', 'Juhi kasutaja ID', 'Juhi e-post',
-  'Rahvamaja', 'Ruum', 'Proovipäev', 'Algus', 'Lõpp', 'Kontakt e-post', 'Telefon', 'Koduleht', 'Sotsiaalmeedia', 'Kirjeldus', 'Aktiivne'
+  'Rahvamaja', 'Ruum', 'Proovipäev', 'Algus', 'Lõpp', 'Kontakt e-post', 'Telefon', 'Koduleht', 'Sotsiaalmeedia', 'Kirjeldus', 'Aktiivne', 'Juhendaja', 'Allikas'
 ]
 
 function normalizeEmail_(value) {
@@ -495,6 +495,8 @@ function collectiveFromRow_(headers, row, rowNumber) {
     website: String(row[map['Koduleht']] || ''),
     socialMedia: String(row[map['Sotsiaalmeedia']] || ''),
     description: String(row[map['Kirjeldus']] || ''),
+    instructor: String(row[map['Juhendaja']] || ''),
+    sourceUrl: String(row[map['Allikas']] || ''),
     active: !['ei', 'false', '0', 'no'].includes(activeValue)
   }
 }
@@ -511,6 +513,79 @@ function listCollectives_(token) {
       ? all.filter((collective) => collective.leaderUserId === actor.id)
       : all
   }
+}
+
+function listPublicCollectives_() {
+  const { headers, values } = collectiveRows_()
+  return { ok: true, initialized: PropertiesService.getScriptProperties().getProperty('PUBLIC_COLLECTIVES_INITIALIZED') === 'yes', collectives: values.slice(1)
+    .map((row, index) => collectiveFromRow_(headers, row, index + 2))
+    .filter((item) => item.id && item.active)
+    .map((item) => ({ id: item.id, name: item.name, house: item.house,
+      instructor: item.instructor, description: item.description,
+      contactEmail: item.contactEmail, phone: item.phone,
+      website: item.website, socialMedia: item.socialMedia, sourceUrl: item.sourceUrl })) }
+}
+
+function saveCollectiveInfo_(payload) {
+  requireManager_(payload.sessionToken)
+  const { sheet, headers, map, values } = collectiveRows_()
+  const name = String(payload.name || '').trim()
+  const house = String(payload.house || '').trim()
+  if (name.length < 2 || name.length > 100) throw new Error('Sisesta kollektiivi nimi (2–100 märki).')
+  if (!['Konguta rahvamaja', 'Rannu rahvamaja'].includes(house)) throw new Error('Vali rahvamaja.')
+  const email = normalizeEmail_(payload.contactEmail)
+  if (email && !isValidEmail_(email)) throw new Error('Kontakt e-post ei sobi.')
+  const url = String(payload.sourceUrl || '').trim()
+  if (url && !/^https:\/\/elvakultuur\.ee\//.test(url)) throw new Error('Allikas peab olema Elva Kultuuri lehel.')
+  const index = values.findIndex((row, rowIndex) => rowIndex > 0 && String(row[map['Kollektiivi ID']]) === String(payload.collectiveId || ''))
+  if (payload.collectiveId && index < 1) throw new Error('Kollektiivi ei leitud.')
+  if (values.slice(1).some((row, offset) => offset + 1 !== index && String(row[map['Nimi']] || '').trim().toLowerCase() === name.toLowerCase())) throw new Error('Selle nimega kollektiiv on juba olemas.')
+  const fields = {
+    'Nimi': name, 'Rahvamaja': house, 'Juhendaja': String(payload.instructor || '').trim().slice(0, 160),
+    'Kirjeldus': String(payload.description || '').trim().slice(0, 1500), 'Kontakt e-post': email,
+    'Telefon': String(payload.phone || '').trim().slice(0, 80), 'Allikas': url,
+    'Aktiivne': payload.active === false ? 'ei' : 'jah'
+  }
+  let rowNumber
+  if (index > 0) {
+    rowNumber = index + 1
+    Object.keys(fields).forEach((header) => setCell_(sheet, map, rowNumber, header, fields[header]))
+  } else {
+    rowNumber = sheet.getLastRow() + 1
+    const id = 'KOL-INFO-' + Date.now() + '-' + Math.floor(Math.random() * 900 + 100)
+    sheet.appendRow(headers.map((header) => safeCell_(header === 'Kollektiivi ID' ? id : fields[header] || '')))
+  }
+  PropertiesService.getScriptProperties().setProperty('PUBLIC_COLLECTIVES_INITIALIZED', 'yes')
+  return { ok: true, collective: collectiveFromRow_(headers, sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0], rowNumber) }
+}
+
+function importCollectiveInfo_(payload) {
+  requireManager_(payload.sessionToken)
+  if (!Array.isArray(payload.collectives) || payload.collectives.length > 20) throw new Error('Impordi nimekiri ei sobi.')
+  const { sheet, headers, map, values } = collectiveRows_()
+  const existing = new Map(values.slice(1).map((row, index) => [String(row[map['Nimi']] || '').trim().toLowerCase(), { row, rowNumber: index + 2 }]))
+  let added = 0
+  let enriched = 0
+  payload.collectives.forEach((item) => {
+    const name = String(item.name || '').trim().toLowerCase()
+    if (!name) return
+    if (!['Konguta rahvamaja', 'Rannu rahvamaja'].includes(String(item.house)) || !/^https:\/\/elvakultuur\.ee\//.test(String(item.sourceUrl || ''))) throw new Error('Impordi allikas või rahvamaja ei sobi.')
+    if (existing.has(name)) {
+      const found = existing.get(name)
+      ;[['Juhendaja', 'instructor'], ['Kirjeldus', 'description'], ['Allikas', 'sourceUrl']].forEach(([header, key]) => {
+        if (map[header] !== undefined && !String(found.row[map[header]] || '').trim() && item[key]) {
+          setCell_(sheet, map, found.rowNumber, header, String(item[key]).trim())
+          enriched++
+        }
+      })
+      return
+    }
+    saveCollectiveInfo_({ ...item, sessionToken: payload.sessionToken })
+    existing.set(name, { row: [], rowNumber: sheet.getLastRow() })
+    added++
+  })
+  PropertiesService.getScriptProperties().setProperty('PUBLIC_COLLECTIVES_INITIALIZED', 'yes')
+  return { ok: true, added, enriched }
 }
 
 function collectiveChangesSheet_() {
@@ -791,6 +866,7 @@ function doGet(e) {
     else if (action === 'list') data = listBookings_(params.session)
     else if (action === 'listUsers') data = listUsers_(params.session)
     else if (action === 'listCollectives') data = listCollectives_(params.session)
+    else if (action === 'listPublicCollectives') data = listPublicCollectives_()
     else if (action === 'listCollectiveChanges') data = listCollectiveChanges_(params.session)
     else if (action === 'operationStatus') data = operationStatus_(params.requestId, params.session)
     else data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
@@ -825,6 +901,10 @@ function doPost(e) {
       result = createCollective_(payload)
     } else if (payload.action === 'updateCollective') {
       result = updateCollective_(payload)
+    } else if (payload.action === 'saveCollectiveInfo') {
+      result = saveCollectiveInfo_(payload)
+    } else if (payload.action === 'importCollectiveInfo') {
+      result = importCollectiveInfo_(payload)
     } else if (payload.action === 'requestCollectiveUpdate') {
       result = requestCollectiveUpdate_(payload)
     } else if (payload.action === 'decideCollectiveChange') {
