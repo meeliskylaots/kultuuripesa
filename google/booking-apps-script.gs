@@ -1,3 +1,36 @@
+// BEGIN GENERATED ROOM CONFIG
+const ROOM_CONFIG = {
+  "rannu-saal": {
+    "houseId": "rannu",
+    "house": "Rannu rahvamaja",
+    "name": "Suur saal",
+    "bufferBeforeMinutes": 60,
+    "bufferAfterMinutes": 60
+  },
+  "rannu-vaike-saal": {
+    "houseId": "rannu",
+    "house": "Rannu rahvamaja",
+    "name": "Väike saal / koosolekuruum",
+    "bufferBeforeMinutes": 30,
+    "bufferAfterMinutes": 30
+  },
+  "konguta-saal": {
+    "houseId": "konguta",
+    "house": "Konguta rahvamaja",
+    "name": "Saal",
+    "bufferBeforeMinutes": 60,
+    "bufferAfterMinutes": 60
+  },
+  "konguta-valiala": {
+    "houseId": "konguta",
+    "house": "Konguta rahvamaja",
+    "name": "Väliala / laululava ümbrus",
+    "bufferBeforeMinutes": 120,
+    "bufferAfterMinutes": 120
+  }
+}
+// END GENERATED ROOM CONFIG
+
 /**
  * Kultuuripesa broneeringute ja ruumikasutuste API.
  *
@@ -14,7 +47,7 @@ const SHEET_NAME = 'Broneeringud'
 const DEFAULT_EMAIL = 'meeliskylaots@gmail.com'
 const RANNU_EMAIL = 'meeliskylaots@gmail.com'
 const KONGUTA_EMAIL = 'meeliskylaots@gmail.com'
-const ORGANIZATION_NAME = 'Rannu ja Konguta rahvamajad'
+const ORGANIZATION_NAME = 'Kultuuripesa'
 
 const HEADERS = [
   'Sisestamise aeg',
@@ -57,9 +90,13 @@ const INSTRUCTOR_SHEET_NAME = 'Juhendajad'
 const INSTRUCTOR_HEADERS = ['Juhendaja ID', 'Nimi', 'E-post', 'PIN', 'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Aktiivne']
 const DEFAULT_INSTRUCTORS = []
 
-function requireAdmin_(pin) {
-  const configured = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN')
-  if (!configured || String(pin || '') !== configured) throw new Error('Töötaja ligipääs puudub või PIN ei sobi.')
+function requireStaff_(pin) {
+  const properties = PropertiesService.getScriptProperties()
+  const directorPin = properties.getProperty('DIRECTOR_PIN')
+  const adminPin = properties.getProperty('ADMIN_PIN')
+  if (directorPin && String(pin || '') === directorPin) return 'director'
+  if (adminPin && String(pin || '') === adminPin) return 'admin'
+  throw new Error('Töötaja ligipääs puudub või PIN ei sobi.')
 }
 
 function doGet(e) {
@@ -72,8 +109,7 @@ function doGet(e) {
     if (action === 'list') {
       data = listBookings_(params.pin)
     } else if (action === 'adminAuth') {
-      requireAdmin_(params.pin)
-      data = { ok: true }
+      data = { ok: true, role: requireStaff_(params.pin) }
     } else if (action === 'authInstructor') {
       data = authInstructor_(params.pin)
     } else {
@@ -99,15 +135,18 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  let lock
   try {
     if (!e || !e.postData || !e.postData.contents) {
       throw new Error('Päringu sisu puudub.')
     }
 
     const payload = JSON.parse(e.postData.contents)
+    lock = LockService.getScriptLock()
+    if (!lock.tryLock(10000)) throw new Error('Teine salvestus on pooleli. Proovi uuesti.')
 
     if (payload.action === 'updateStatus') {
-      requireAdmin_(payload.adminPin)
+      requireStaff_(payload.adminPin)
       return jsonResponse_(updateStatus_(payload))
     }
 
@@ -118,7 +157,48 @@ function doPost(e) {
     return jsonResponse_(createBooking_(payload))
   } catch (error) {
     return jsonResponse_({ ok: false, error: String(error) })
+  } finally {
+    if (lock && lock.hasLock()) {
+      SpreadsheetApp.flush()
+      lock.releaseLock()
+    }
   }
+}
+
+function validateRoomTime_(payload) {
+  const room = Object.prototype.hasOwnProperty.call(ROOM_CONFIG, payload.roomId) ? ROOM_CONFIG[payload.roomId] : null
+  if (!room) throw new Error('Ruum ei ole broneerimiseks avatud.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || ''))) throw new Error('Kuupäev ei sobi.')
+  const parsed = new Date(payload.date + 'T12:00:00Z')
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== payload.date) throw new Error('Kuupäev ei sobi.')
+  const today = Utilities.formatDate(new Date(), 'Europe/Tallinn', 'yyyy-MM-dd')
+  if (payload.date < today) throw new Error('Minevikku ei saa broneeringut lisada.')
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+  if (!timePattern.test(String(payload.startTime)) || !timePattern.test(String(payload.endTime))) throw new Error('Kellaaeg ei sobi.')
+  const minutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
+  const start = minutes(payload.startTime)
+  const end = minutes(payload.endTime)
+  if (end <= start) throw new Error('Lõpuaeg peab olema algusajast hilisem.')
+  const format = (value) => String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0')
+  payload.house = room.house
+  payload.roomName = room.name
+  payload.bufferBeforeMinutes = room.bufferBeforeMinutes
+  payload.bufferAfterMinutes = room.bufferAfterMinutes
+  payload.reservedStartTime = format(Math.max(0, start - room.bufferBeforeMinutes))
+  payload.reservedEndTime = format(Math.min(1440, end + room.bufferAfterMinutes))
+}
+
+function assertRoomAvailable_(payload, excludeId) {
+  const bookings = listBookings_().usages
+  const conflict = bookings.some((item) => item.roomId === payload.roomId && item.date === payload.date &&
+    String(item.bookingId) !== String(excludeId || '') &&
+    (item.reservedStartTime || item.startTime) < payload.reservedEndTime &&
+    (item.reservedEndTime || item.endTime) > payload.reservedStartTime)
+  if (conflict) throw new Error('Valitud ruum on sellel ajal juba kasutuses või ootel. Vali teine aeg.')
+}
+
+function safeCell_(value) {
+  return typeof value === 'string' && /^[=+@-]/.test(value) ? "'" + value : value
 }
 
 function testSetup() {
@@ -135,6 +215,8 @@ function testSetup() {
 
 function createBooking_(payload) {
   validatePayload_(payload)
+  validateRoomTime_(payload)
+  assertRoomAvailable_(payload)
   payload.status = 'ootel'
 
   const sheet = getOrCreateSheet_()
@@ -179,7 +261,7 @@ function createBooking_(payload) {
     'Kinnituskiri saadetud': ''
   }
 
-  sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
+  sheet.appendRow(headers.map((header) => safeCell_(rowObject[header] !== undefined ? rowObject[header] : '')))
 
   const staffEmail = getStaffEmail_(payload.house)
   sendStaffEmail_(staffEmail, payload, bookingId)
@@ -190,7 +272,7 @@ function createBooking_(payload) {
 
 function createUsage_(payload) {
   if (payload.instructorId === 'admin' || payload.instructorId === 'director') {
-    requireAdmin_(payload.adminPin)
+    payload.instructorId = requireStaff_(payload.adminPin)
   } else {
     const authenticated = authInstructor_(payload.instructorPin)
     if (!authenticated.ok || authenticated.instructor.id !== payload.instructorId ||
@@ -205,6 +287,8 @@ function createUsage_(payload) {
   const requiredFields = ['house', 'roomName', 'roomId', 'date', 'startTime', 'endTime', 'name', 'email', 'publicTitle']
   const missing = requiredFields.filter(field => !payload[field])
   if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
+  validateRoomTime_(payload)
+  assertRoomAvailable_(payload)
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
@@ -247,7 +331,7 @@ function createUsage_(payload) {
     'Kinnituskiri saadetud': ''
   }
 
-  sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
+  sheet.appendRow(headers.map((header) => safeCell_(rowObject[header] !== undefined ? rowObject[header] : '')))
 
   MailApp.sendEmail({
     to: DEFAULT_EMAIL,
@@ -322,6 +406,7 @@ function createUsageId_() {
 }
 
 function updateStatus_(payload) {
+  if (!['kinnitatud', 'tühistatud'].includes(payload.status)) throw new Error('Staatus ei sobi.')
   const bookingId = payload.bookingId || payload.id
   if (!bookingId) throw new Error('Broneeringu ID puudub.')
 
@@ -335,6 +420,14 @@ function updateStatus_(payload) {
   for (let i = 1; i < values.length; i += 1) {
     if (String(values[i][idCol]) === String(bookingId)) {
       const rowNumber = i + 1
+      if (payload.status === 'kinnitatud') {
+        const booking = sheetRowToBooking_(rowToObject_(headers, values[i]), rowNumber)
+        if (booking.status === 'tühistatud') throw new Error('Tühistatud kirjet ei saa uuesti kinnitada. Loo uus soov.')
+        validateRoomTime_(booking)
+        assertRoomAvailable_(booking, bookingId)
+        setCell_(sheet, map, rowNumber, 'Ruum kinni alates', booking.reservedStartTime)
+        setCell_(sheet, map, rowNumber, 'Ruum kinni kuni', booking.reservedEndTime)
+      }
       setCell_(sheet, map, rowNumber, 'Staatus', payload.status || 'ootel')
       if (payload.publicTitle !== undefined) setCell_(sheet, map, rowNumber, 'Avaliku kalendri tekst', payload.publicTitle)
       if (payload.displayMode !== undefined) setCell_(sheet, map, rowNumber, 'Kuvamise viis', payload.displayMode)
@@ -378,8 +471,9 @@ function listBookings_(pin) {
       eventType: item.eventType, publicEvent: item.publicEvent, publicTitle: item.publicTitle,
       displayMode: item.displayMode
     }))
-  const configured = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN')
-  return { ok: true, bookings: configured && String(pin || '') === configured ? bookings : [], usages }
+  let staff = false
+  try { staff = Boolean(requireStaff_(pin)) } catch (error) { /* Public calendar */ }
+  return { ok: true, bookings: staff ? bookings : [], usages }
 }
 
 function sheetRowToBooking_(row, rowNumber) {
@@ -467,7 +561,7 @@ function rowToObject_(headers, row) {
 
 function setCell_(sheet, map, rowNumber, header, value) {
   if (map[header] === undefined) return
-  sheet.getRange(rowNumber, map[header] + 1).setValue(value)
+  sheet.getRange(rowNumber, map[header] + 1).setValue(safeCell_(value))
 }
 
 function validatePayload_(payload) {

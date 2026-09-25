@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   bookingSettings,
   filters,
-  houses,
+  activeHouses,
   initialRequests,
   rentalRooms,
   rentalServices,
@@ -153,7 +153,7 @@ function roomIdFromHouseAndRoom(house, roomName) {
   })
   if (found) return found.id
   const loose = rentalRooms.find((room) => room.house === house && room.name === roomName)
-  return loose?.id || rentalRooms[0].id
+  return loose?.id || ''
 }
 
 function normalizeStatusForCalendar(status) {
@@ -166,7 +166,8 @@ function normalizeStatusForCalendar(status) {
 
 function bookingToCalendarEvent(item) {
   const roomId = item.roomId || roomIdFromHouseAndRoom(item.house, item.roomName || item.room)
-  const room = getRoomById(roomId)
+  const room = rentalRooms.find((candidate) => candidate.id === roomId)
+  if (!room) return null
   const normalizedStatus = normalizeStatusForCalendar(item.status)
   const publicTitle = item.publicTitle || item.calendarText || (normalizedStatus === 'pending' ? 'Broneeritud' : (item.publicEvent ? (item.eventType || 'Avalik sündmus') : 'Ruum broneeritud'))
   return {
@@ -294,7 +295,7 @@ function getAvailability(roomId, dateISO, startTime, endTime, events, activities
     return { status: 'missing', items, conflicts: [], requestedStart, requestedEnd, reservedStart, reservedEnd }
   }
 
-  if (requestedEnd <= requestedStart) {
+  if (dateISO < todayISO() || requestedEnd <= requestedStart) {
     return { status: 'invalid', items, conflicts: [], requestedStart, requestedEnd, reservedStart, reservedEnd }
   }
 
@@ -350,9 +351,9 @@ function Header({ view, setView }) {
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
         <button onClick={() => setView('home')} className="flex items-center gap-3 text-left">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-700 text-lg font-black text-white">RK</div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-700 text-lg font-black text-white">KP</div>
           <div>
-            <p className="font-black leading-tight text-slate-950">Rannu & Konguta</p>
+            <p className="font-black leading-tight text-slate-950">Kultuuripesa</p>
             <p className="text-xs font-semibold text-slate-500">rahvamajad</p>
           </div>
         </button>
@@ -424,8 +425,8 @@ function HomeView({ setView, events, openEventDetails }) {
     <Page>
       <section className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
         <div>
-          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast</p>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Rannu ja Konguta kultuurielu ühest kohast.</h1>
+          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Kohalik kultuurielu ühest kohast</p>
+          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Kohalik kultuurielu ühest kohast.</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vaata sündmusi, broneeri rahvamaja ruume ja leia üles kohalikud ringid, kollektiivid ning kogukonnategevused.</p>
         </div>
         <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -688,7 +689,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
             <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} /></div>
             {availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on esialgu vaba. Ruum hoitakse puhvrit arvestades kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}
             {availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Seda aega ei saa valida.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}
-            {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Lõpuaeg peab olema algusajast hilisem.</div>}
+            {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}
             <button disabled={!canContinue} onClick={continueBooking} className="mt-5 w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka broneeringuga</button>
           </div>
         </aside>
@@ -765,6 +766,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
     accepted: false
   })
   const [submitMessage, setSubmitMessage] = useState('')
+  const [sending, setSending] = useState(false)
   const room = getRoomById(form.roomId)
   const availability = getAvailability(form.roomId, form.date, form.startTime, form.endTime, events, activities)
   const requestedHours = Math.max(0, (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60)
@@ -780,6 +782,9 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   }
 
   async function submitBooking() {
+    if (sending) return
+    setSending(true)
+    setSubmitMessage('Saadan broneeringusoovi, palun oota…')
     const clientBookingId = `BR-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`
     const payload = {
       action: 'createBooking',
@@ -822,7 +827,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
         onBookingCreated?.({ ...payload, id: clientBookingId, bookingId: clientBookingId, status: 'ootel', calendarText: payload.publicTitle })
         setSubmitMessage('Broneeringusoov saadeti. See on avalikus kalendris märgitud kui “ootab kinnitamist” ja töötaja vaates ootel.')
       } catch (error) {
-        setSubmitMessage('Saatmine ei õnnestunud. Palun proovi uuesti või võta rahvamajaga ühendust.')
+        setSubmitMessage(error.message)
       }
     } else {
       const subject = encodeURIComponent('Ruumi kasutamise soov')
@@ -830,6 +835,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
       window.location.href = `mailto:${bookingSettings.defaultEmail}?subject=${subject}&body=${body}`
       setSubmitMessage('Avati e-kirja mustand, sest Apps Scripti URL puudub.')
     }
+    setSending(false)
   }
 
   return (
@@ -860,7 +866,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
           {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
           {step === 2 && <BookingStepEvent form={form} setForm={setForm} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
           {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
-          {step === 4 && <BookingStepContact form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
+          {step === 4 && <BookingStepContact sending={sending} form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
         </section>
       </div>
     </Page>
@@ -873,7 +879,7 @@ function Field({ label, required, children }) {
 const inputClass = 'w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500'
 
 function BookingStepRoom({ form, setForm, availability, room, events, activities, onNext, canNext }) {
-  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
+  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
 }
 
 function BookingStepEvent({ form, setForm, onBack, onNext }) {
@@ -905,8 +911,8 @@ function BookingStepServices({ form, room, toggleService, onBack, onNext }) {
   )
 }
 
-function BookingStepContact({ form, setForm, onBack, onSubmit, submitMessage }) {
-  const canSubmit = form.name && form.email && form.phone && form.accepted
+function BookingStepContact({ sending, form, setForm, onBack, onSubmit, submitMessage }) {
+  const canSubmit = !sending && form.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) && form.phone.trim() && form.accepted
   return <div><h2 className="text-2xl font-black">4. Kontakt, tingimused ja saatmine</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field><Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Telefon" required><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Allkirjastamise viis" required><select className={inputClass}><option>Allkirjastan lepingu kohapeal rahvamajas</option><option>Soovin lepingu allkirjastada digitaalselt</option></select></Field></div><details className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><summary className="cursor-pointer font-black">Ruumide kasutamise tingimused, hinnainfo ja isikuandmed</summary><p className="mt-3 text-sm leading-6 text-slate-600">Broneering jõustub pärast rahvamaja kinnitust. Hind on orienteeruv ja kinnitatakse lõplikult pärast ruumi saadavuse ning vajaduste ülevaatamist. Isikuandmeid kasutatakse broneeringu, lepingu ja arve menetlemiseks.</p></details><label className="mt-4 flex items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.accepted} onChange={(e) => setForm({ ...form, accepted: e.target.checked })} className="mt-1" /><span className="text-sm"><b>Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega. <span className="text-rose-600">*</span></b></span></label>{submitMessage && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{submitMessage}</div>}<div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canSubmit} onClick={onSubmit} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Saada broneeringusoov</button></div></div>
 }
 
@@ -915,14 +921,30 @@ function ActivitiesView({ activities }) {
 }
 
 function HousesView() {
-  return <Page><SectionHeader eyebrow="Rahvamajad" title="Kaks maja, kaks kohalikku nägu" text="Siia saab hiljem lisada päris fotod rahvamajadest ja ruumidest. Praegu on pildialad fotode kohahoidjad." /><div className="grid gap-5 md:grid-cols-2">{houses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><div className="mb-5 flex h-52 items-center justify-center rounded-[1.3rem] bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Lisa siia päris foto</div><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></Page>
+  return <Page><SectionHeader eyebrow="Rahvamajad" title="Rahvamajad" text="Leia oma kodukandi rahvamaja ning tutvu selle tegevuste ja ruumidega." /><div className="grid gap-5 md:grid-cols-2">{activeHouses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></Page>
 }
 
 function ContactView() {
-  return <Page><SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta või helista, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." /><div className="grid gap-5 md:grid-cols-3">{['Üldkontakt', 'Rannu rahvamaja', 'Konguta rahvamaja'].map((title, index) => <div key={title} className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{title}</h3><p className="mt-3 text-slate-600">{index === 0 ? 'kultuur@elva.ee' : index === 1 ? 'Rannu alevik' : 'Annikoru küla'}</p><p className="mt-1 text-slate-600">+372 0000 0000</p><div className="mt-5 flex flex-wrap gap-2"><a href="tel:+37200000000" className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white">Helista</a><a href="mailto:kultuur@elva.ee" className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-800">Kirjuta</a></div></div>)}</div></Page>
+  return (
+    <Page>
+      <SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." />
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        {activeHouses.map((house) => (
+          <article key={house.id} className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <h3 className="text-lg font-black">{house.name}</h3>
+            <p className="mt-3 text-slate-600">{house.location}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {house.phone && <a href={`tel:${house.phone}`} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">Helista</a>}
+              <a href={`mailto:${house.email || bookingSettings.defaultEmail}?subject=${encodeURIComponent(house.name)}`} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800">Kirjuta</a>
+            </div>
+          </article>
+        ))}
+      </div>
+    </Page>
+  )
 }
 
-function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminPin, isAdminUnlocked, setIsAdminUnlocked, setInstructorSession }) {
+function LoginView({ setView, selectedRole, setSelectedRole, setStaffRole, adminPin, setAdminPin, isAdminUnlocked, setIsAdminUnlocked, setInstructorSession }) {
   const [error, setError] = useState('')
   const [instructorPin, setInstructorPin] = useState('')
   const isInstructorRole = selectedRole === 'collective'
@@ -932,6 +954,8 @@ function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminP
       const result = await jsonp(bookingSettings.appsScriptUrl, { action: 'adminAuth', pin: adminPin })
       if (!result.ok) throw new Error('PIN-kood ei sobi.')
       activeAdminPin = adminPin
+      setSelectedRole(result.role)
+      setStaffRole(result.role)
       setAdminPin('')
       setIsAdminUnlocked(true)
       setError('')
@@ -1009,6 +1033,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   const [instructor, setInstructor] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState('')
   const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
   const [form, setForm] = useState({
     requestType: 'Proov',
     recurrence: 'single',
@@ -1100,12 +1125,15 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   const previewCount = usageDates.length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
   const availability = getAvailability(selectedRoom.id, selectedDateForPanel, form.startTime, form.endTime, events, activities)
-  const canSubmit = usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
+  const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
 
   async function submitInstructorRequest() {
     if (!canSubmit) return
     const seriesId = form.recurrence === 'weekly' ? `SEERIA-${Date.now()}` : ''
     const created = []
+    setSending(true)
+    setMessage('Salvestan, palun oota…')
+    try {
 
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
@@ -1150,6 +1178,9 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 
     setMessage(form.recurrence === 'weekly' ? `Korduv sisestus saadeti kinnitamiseks. Loodi ${created.length} ootel kalendrikirjet.` : 'Sisestus saadeti juhatajale kinnitamiseks. Kui see kinnitatakse, ilmub see avalikku kalendrisse ja blokeerib ruumi.')
     setForm((current) => ({ ...current, notes: '' }))
+    } catch (error) {
+      setMessage(`Salvestus katkes. Kinnitatud salvestusi: ${created.length}. ${error.message}`)
+    } finally { setSending(false) }
   }
 
   return (
@@ -1167,12 +1198,12 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
             <Field label="Ruum" required><select className={inputClass} value={selectedRoom.id} onChange={(e) => setSelectedRoomId(e.target.value)}>{allowedRooms.filter((room) => room.house === selectedRoom.house).map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></Field>
             <Field label="Kordus" required><select className={inputClass} value={form.recurrence} onChange={(e) => setForm({ ...form, recurrence: e.target.value })}><option value="single">Ühekordne tegevus</option><option value="weekly">Kordub iga nädal</option></select></Field>
             {form.recurrence === 'single' ? (
-              <Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
+              <Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
             ) : (
               <>
                 <Field label="Nädalapäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
-                <Field label="Perioodi algus" required><input type="date" className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
-                <Field label="Perioodi lõpp" required><input type="date" className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
+                <Field label="Perioodi algus" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
+                <Field label="Perioodi lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
               </>
             )}
             <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
@@ -1206,6 +1237,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshData }) {
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
   const [form, setForm] = useState({
     requestType: 'Proov',
     recurrence: 'single',
@@ -1225,12 +1257,15 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
   const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities) }))
   const conflictCount = availabilityChecks.filter((item) => item.availability.status !== 'free').length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
-  const canSubmit = usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
+  const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
 
   async function createAdminUsage(status) {
     if (!canSubmit) return
     const seriesId = form.recurrence === 'weekly' ? `SEERIA-${Date.now()}` : ''
     const created = []
+    setSending(true)
+    setMessage('Salvestan, palun oota…')
+    try {
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
       const availability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities)
@@ -1257,7 +1292,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         eventType: form.requestType,
         participants: '',
         publicEvent: form.displayMode !== 'neutral',
-        name: selectedRole === 'admin' ? 'Administraator / kunstiline juht' : 'Rahvamaja juht',
+        name: selectedRole === 'admin' ? 'Administraator' : 'Juhataja',
         email: bookingSettings.defaultEmail,
         phone: '',
         publicTitle: form.displayMode === 'neutral' ? 'Rahvamaja kasutuses' : form.publicTitle,
@@ -1274,6 +1309,9 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
     setMessage(status === 'kinnitatud' ? `Loodi ja kinnitati ${created.length} kalendrikirjet.` : `Loodi ${created.length} ootel kalendrikirjet.`)
     setForm((current) => ({ ...current, notes: '' }))
     setTimeout(refreshData, 900)
+    } catch (error) {
+      setMessage(`Salvestus katkes. Kinnitatud salvestusi: ${created.length}. ${error.message}`)
+    } finally { setSending(false) }
   }
 
   return (
@@ -1291,12 +1329,12 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         <Field label="Kordus" required><select className={inputClass} value={form.recurrence} onChange={(e) => setForm({ ...form, recurrence: e.target.value })}><option value="single">Ühekordne tegevus</option><option value="weekly">Kordub iga nädal</option></select></Field>
         <Field label="Avaliku kalendri tekst" required><input className={inputClass} value={form.publicTitle} onChange={(e) => setForm({ ...form, publicTitle: e.target.value })} placeholder="nt Segakoori proov või Ringitegevus" /></Field>
         {form.recurrence === 'single' ? (
-          <Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
+          <Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
         ) : (
           <>
             <Field label="Nädalapäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
-            <Field label="Perioodi algus" required><input type="date" className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
-            <Field label="Perioodi lõpp" required><input type="date" className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
+            <Field label="Perioodi algus" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
+            <Field label="Perioodi lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
           </>
         )}
         <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
@@ -1422,6 +1460,7 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
 export default function App() {
   const [view, setView] = useState('home')
   const [selectedRole, setSelectedRole] = useState('director')
+  const [staffRole, setStaffRole] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [bookingDraft, setBookingDraft] = useState(null)
@@ -1494,7 +1533,7 @@ export default function App() {
     })
     return Array.from(map.values())
   }, [sheetUsages, bookings])
-  const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
+  const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => item && ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
   const events = useMemo(() => sheetEvents, [sheetEvents])
   const activities = []
   const selectedEvent = useMemo(() => events.find((event) => String(event.id) === String(selectedEventId)), [events, selectedEventId])
@@ -1507,6 +1546,17 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
       <Header view={view} setView={setView} />
+      {isAdminUnlocked && <div className="mx-auto flex max-w-7xl items-center justify-end gap-3 px-4 py-2 text-sm">
+        <span>{roles.find(role => role.id === staffRole)?.label}</span>
+        <button className="rounded-xl bg-slate-100 px-4 py-3 font-bold" onClick={() => {
+          activeAdminPin = ''
+          setIsAdminUnlocked(false)
+          setStaffRole(null)
+          setBookings([])
+          setView('home')
+          refreshData()
+        }}>Logi välja</button>
+      </div>}
       <div className="mx-auto max-w-7xl px-4 pt-3 text-xs font-bold text-slate-500 md:px-8">{dataStatus}</div>
       {view === 'home' && <HomeView setView={setView} events={events} openEventDetails={openEventDetails} />}
       {view === 'events' && <EventsView events={events} openEventDetails={openEventDetails} />}
@@ -1519,8 +1569,8 @@ export default function App() {
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
       {view === 'instructor' && <InstructorView events={events} activities={activities} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
-      {view === 'login' && <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
-      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={selectedRole} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'login' && <LoginView setStaffRole={setStaffRole} setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
+      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setStaffRole={setStaffRole} setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
       <MobileNav view={view} setView={setView} />
     </div>
   )

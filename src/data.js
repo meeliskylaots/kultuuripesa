@@ -171,10 +171,20 @@ export const initialRequests = [
   { id: 102, type: 'Uus sündmus', title: 'Kogukonna pannkoogihommik', submittedBy: 'Konguta külaseltsi esindaja', house: 'Konguta rahvamaja', target: 'Avalik kalender', oldValue: '-', newValue: '22. juuni kell 10.00', status: 'ootel', publicTitle: 'Kogukonna hommik' }
 ]
 
+// Add a new house here, then add its rooms below. Only active houses appear in public views.
+export const houses = [
+  { id: 'rannu', name: 'Rannu rahvamaja', active: true, location: 'Rannu alevik', description: 'Piirkondlik kultuuri- ja kooskäimiskoht, kus toimuvad kontserdid, huviringid, kogukonnaõhtud ja kohtumised.', tags: ['kontserdid', 'rahvakultuur', 'koosolekud', 'eakate tegevused'] },
+  { id: 'konguta', name: 'Konguta rahvamaja', active: true, location: 'Annikoru küla', description: 'Kogukondlik kultuuripesa, mis sobib töötubadeks, perepäevadeks, noorte algatusteks ja väliala sündmusteks.', tags: ['töötoad', 'pered', 'noored', 'väliala'] },
+  { id: 'puhja', name: 'Puhja rahvamaja', active: false, location: 'Puhja', description: '', tags: [] },
+  { id: 'rongu', name: 'Rõngu rahvamaja', active: false, location: 'Rõngu', description: '', tags: [] }
+]
+
+export const activeHouses = houses.filter((house) => house.active)
+
 export const rentalRooms = [
   {
     id: 'rannu-saal',
-    house: 'Rannu rahvamaja',
+    houseId: 'rannu',
     email: 'rannu@elva.ee',
     name: 'Suur saal',
     capacity: 120,
@@ -190,7 +200,7 @@ export const rentalRooms = [
   },
   {
     id: 'rannu-vaike-saal',
-    house: 'Rannu rahvamaja',
+    houseId: 'rannu',
     email: 'rannu@elva.ee',
     name: 'Väike saal / koosolekuruum',
     capacity: 35,
@@ -206,7 +216,7 @@ export const rentalRooms = [
   },
   {
     id: 'konguta-saal',
-    house: 'Konguta rahvamaja',
+    houseId: 'konguta',
     email: 'konguta@elva.ee',
     name: 'Saal',
     capacity: 80,
@@ -222,7 +232,7 @@ export const rentalRooms = [
   },
   {
     id: 'konguta-valiala',
-    house: 'Konguta rahvamaja',
+    houseId: 'konguta',
     email: 'konguta@elva.ee',
     name: 'Väliala / laululava ümbrus',
     capacity: 300,
@@ -236,7 +246,8 @@ export const rentalRooms = [
     included: ['väliala kasutus', 'WC kasutus kokkulepitud ulatuses', 'garderoobi kasutus kokkulepitud ulatuses', 'ligipääsu kokkulepe', 'koristus ja ettevalmistus', 'esmane riskide ülevaatus'],
     agreement: ['köögi kasutamine kokkuleppel', 'tegelaste toa kasutamine kokkuleppel']
   }
-]
+].filter((room) => activeHouses.some((house) => house.id === room.houseId))
+  .map((room) => ({ ...room, house: activeHouses.find((house) => house.id === room.houseId).name }))
 
 export const rentalServices = [
   { id: 'basic-sound', label: 'Helitehnika põhikomplekt', description: 'Kõlarid ja mikrofon kuni väikese sündmuse jaoks.', price: 20, pricing: 'fixed' },
@@ -246,16 +257,12 @@ export const rentalServices = [
   { id: 'coffee', label: 'Kohvilaua ettevalmistus', description: 'Kohv, tee ja lauanõud. Toitlustus eraldi kokkuleppel.', price: 15, pricing: 'fixed' }
 ]
 
-export const houses = [
-  { name: 'Rannu rahvamaja', location: 'Rannu alevik', description: 'Piirkondlik kultuuri- ja kooskäimiskoht, kus toimuvad kontserdid, huviringid, kogukonnaõhtud ja kohtumised.', tags: ['kontserdid', 'rahvakultuur', 'koosolekud', 'eakate tegevused'] },
-  { name: 'Konguta rahvamaja', location: 'Annikoru küla', description: 'Kogukondlik kultuuripesa, mis sobib töötubadeks, perepäevadeks, noorte algatusteks ja väliala sündmusteks.', tags: ['töötoad', 'pered', 'noored', 'väliala'] }
-]
 
 export const roles = [
-  { id: 'director', label: 'Rahvamaja juht', description: 'Lisab ja kinnitab sündmusi, kohendab avaliku kalendri tekste, haldab ruume ja broneeringuid.' },
-  { id: 'admin', label: 'Administraator / kunstiline juht', description: 'Haldab avalikku infot, sündmusi, ringe, broneeringuid ja kommunikatsiooni.' },
+  { id: 'director', label: 'Juhataja', description: 'Lisab ja kinnitab sündmusi, kohendab avaliku kalendri tekste, haldab ruume ja broneeringuid.' },
+  { id: 'admin', label: 'Administraator', description: 'Haldab avalikku infot, sündmusi, ringe, broneeringuid ja kommunikatsiooni.' },
   { id: 'collective', label: 'Kollektiivi juht', description: 'Lisab ja muudab oma kollektiivi infot, prooviaegu ja avalikke teateid kinnitamiseks.' },
   { id: 'tech', label: 'Juht / tehnik', description: 'Näeb ruumide hõivatust, tehnilisi vajadusi, inventari ja ettevalmistuse ülesandeid.' }
 ]
 
-export const filters = ['Kõik', 'Rannu', 'Konguta', 'Peredele', 'Noortele', 'Eakatele', 'Tasuta', 'Registreerimisega']
+export const filters = ['Kõik', ...activeHouses.map((house) => house.name.replace(' rahvamaja', '')), 'Peredele', 'Noortele', 'Eakatele', 'Tasuta', 'Registreerimisega']
