@@ -306,6 +306,7 @@ async function postToAppsScript(payload) {
       if (!result?.ok) throw new Error(result?.error || 'Salvestamine ebaõnnestus.')
       return result
     } catch (error) {
+      if (error?.message && error.message !== 'Päring aegus.') throw error
       if (attempt === 11) throw error
     }
   }
