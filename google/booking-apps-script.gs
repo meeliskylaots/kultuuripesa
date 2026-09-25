@@ -55,10 +55,12 @@ const HEADERS = [
 
 const INSTRUCTOR_SHEET_NAME = 'Juhendajad'
 const INSTRUCTOR_HEADERS = ['Juhendaja ID', 'Nimi', 'E-post', 'PIN', 'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Aktiivne']
-const DEFAULT_INSTRUCTORS = [
-  ['rahvatants-rannu', 'Rahvatantsurühma juhendaja', 'juhendaja@example.com', '4821', 'Rahvatants', 'Rannu rahvamaja', 'Suur saal', 'rannu-saal', 'rannu-saal,rannu-vaike-saal,konguta-saal', 'jah'],
-  ['kasitoo-konguta', 'Käsitööringi juhendaja', 'kasitoo@example.com', '7394', 'Käsitöö- ja loovtöötuba', 'Konguta rahvamaja', 'Saal', 'konguta-saal', 'konguta-saal,konguta-valiala', 'jah']
-]
+const DEFAULT_INSTRUCTORS = []
+
+function requireAdmin_(pin) {
+  const configured = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN')
+  if (!configured || String(pin || '') !== configured) throw new Error('Töötaja ligipääs puudub või PIN ei sobi.')
+}
 
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {}
@@ -68,7 +70,10 @@ function doGet(e) {
   let data
   try {
     if (action === 'list') {
-      data = listBookings_()
+      data = listBookings_(params.pin)
+    } else if (action === 'adminAuth') {
+      requireAdmin_(params.pin)
+      data = { ok: true }
     } else if (action === 'authInstructor') {
       data = authInstructor_(params.pin)
     } else {
@@ -78,6 +83,10 @@ function doGet(e) {
     data = { ok: false, error: String(error) }
   }
 
+  if (callback && !/^[$A-Z_][0-9A-Z_$]*$/i.test(callback)) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Vigane callback.' }))
+      .setMimeType(ContentService.MimeType.JSON)
+  }
   if (callback) {
     return ContentService
       .createTextOutput(`${callback}(${JSON.stringify(data)})`)
@@ -98,6 +107,7 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents)
 
     if (payload.action === 'updateStatus') {
+      requireAdmin_(payload.adminPin)
       return jsonResponse_(updateStatus_(payload))
     }
 
@@ -125,6 +135,7 @@ function testSetup() {
 
 function createBooking_(payload) {
   validatePayload_(payload)
+  payload.status = 'ootel'
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
@@ -170,7 +181,7 @@ function createBooking_(payload) {
 
   sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
 
-  const staffEmail = getStaffEmail_(payload.house, payload.roomEmail)
+  const staffEmail = getStaffEmail_(payload.house)
   sendStaffEmail_(staffEmail, payload, bookingId)
   sendClientReceivedEmail_(payload, bookingId)
 
@@ -178,6 +189,19 @@ function createBooking_(payload) {
 }
 
 function createUsage_(payload) {
+  if (payload.instructorId === 'admin' || payload.instructorId === 'director') {
+    requireAdmin_(payload.adminPin)
+  } else {
+    const authenticated = authInstructor_(payload.instructorPin)
+    if (!authenticated.ok || authenticated.instructor.id !== payload.instructorId ||
+        !authenticated.instructor.allowedRoomIds.includes(payload.roomId)) {
+      throw new Error('Juhendaja ligipääs puudub või ruum ei ole lubatud.')
+    }
+    payload.status = 'ootel'
+    payload.name = authenticated.instructor.name
+    payload.email = authenticated.instructor.email
+    payload.collective = authenticated.instructor.collective
+  }
   const requiredFields = ['house', 'roomName', 'roomId', 'date', 'startTime', 'endTime', 'name', 'email', 'publicTitle']
   const missing = requiredFields.filter(field => !payload[field])
   if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
@@ -255,7 +279,6 @@ function authInstructor_(pin) {
           id: row[map['Juhendaja ID']] || '',
           name: row[map['Nimi']] || '',
           email: row[map['E-post']] || '',
-          pin: rowPin,
           collective: row[map['Kollektiiv']] || '',
           house: row[map['Rahvamaja']] || '',
           room: row[map['Ruum']] || '',
@@ -279,7 +302,7 @@ function ensureInstructorSheet_() {
   const existing = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String) : []
   if (existing.length === 0) {
     sheet.getRange(1, 1, 1, INSTRUCTOR_HEADERS.length).setValues([INSTRUCTOR_HEADERS])
-    sheet.getRange(2, 1, DEFAULT_INSTRUCTORS.length, INSTRUCTOR_HEADERS.length).setValues(DEFAULT_INSTRUCTORS)
+    if (DEFAULT_INSTRUCTORS.length) sheet.getRange(2, 1, DEFAULT_INSTRUCTORS.length, INSTRUCTOR_HEADERS.length).setValues(DEFAULT_INSTRUCTORS)
     sheet.setFrozenRows(1)
     return sheet
   }
@@ -333,7 +356,7 @@ function updateStatus_(payload) {
   throw new Error('Broneeringut ei leitud: ' + bookingId)
 }
 
-function listBookings_() {
+function listBookings_(pin) {
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
   const values = sheet.getDataRange().getValues()
@@ -345,8 +368,18 @@ function listBookings_() {
     bookings.push(sheetRowToBooking_(row, i + 1))
   }
 
-  const usages = bookings.filter((item) => !['tühistatud', 'tuhistatud', 'cancelled'].includes(String(item.status || '').toLowerCase()))
-  return { ok: true, bookings, usages }
+  const usages = bookings
+    .filter((item) => !['tühistatud', 'tuhistatud', 'cancelled'].includes(String(item.status || '').toLowerCase()))
+    .map((item) => ({
+      id: item.id, bookingId: item.bookingId, type: item.type, status: item.status,
+      house: item.house, roomName: item.roomName, roomId: item.roomId, date: item.date,
+      dateISO: item.dateISO, startTime: item.startTime, endTime: item.endTime,
+      reservedStartTime: item.reservedStartTime, reservedEndTime: item.reservedEndTime,
+      eventType: item.eventType, publicEvent: item.publicEvent, publicTitle: item.publicTitle,
+      displayMode: item.displayMode
+    }))
+  const configured = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN')
+  return { ok: true, bookings: configured && String(pin || '') === configured ? bookings : [], usages }
 }
 
 function sheetRowToBooking_(row, rowNumber) {
@@ -451,8 +484,7 @@ function createBookingId_() {
   return `BR-${datePart}-${randomPart}`
 }
 
-function getStaffEmail_(house, roomEmail) {
-  if (roomEmail && isValidEmail_(roomEmail)) return roomEmail
+function getStaffEmail_(house) {
   const houseText = String(house || '').toLowerCase()
   if (houseText.includes('rannu')) return RANNU_EMAIL
   if (houseText.includes('konguta')) return KONGUTA_EMAIL
