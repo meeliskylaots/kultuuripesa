@@ -321,7 +321,30 @@ function getBlockingItems(events, activities) {
   return [...eventItems, ...activityItems]
 }
 
-function getRoomDayItems(roomId, dateISO, events, activities) {
+function buildRoomDayIndex(events, activities) {
+  const index = new Map()
+
+  getBlockingItems(events, activities).forEach((item) => {
+    const key = `${item.roomId}|${item.dateISO}`
+    const current = index.get(key) || []
+    current.push(item)
+    index.set(key, current)
+  })
+
+  for (const items of index.values()) {
+    items.sort(
+      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+    )
+  }
+
+  return index
+}
+
+function getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex) {
+  if (roomDayIndex) {
+    return roomDayIndex.get(`${roomId}|${dateISO}`) || []
+  }
+
   return getBlockingItems(events, activities)
     .filter((item) => item.roomId === roomId && item.dateISO === dateISO)
     .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
