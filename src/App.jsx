@@ -77,8 +77,9 @@ function recurrenceSummary(form) {
 
 const todayISO = () => { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const value = Object.fromEntries(parts.map(part => [part.type, part.value])); return `${value.year}-${value.month}-${value.day}` }
 const datePlusDays = (iso, count) => new Date(Date.parse(`${iso}T12:00:00Z`) + count * 86400000).toISOString().slice(0, 10)
-let activeSessionToken = ''
-let activeSessionUser = null
+
+let activeSessionToken = localStorage.getItem('kp_token') || ''
+let activeSessionUser = JSON.parse(localStorage.getItem('kp_user') || 'null')
 
 function bytesToBase64(bytes) {
   let binary = ''
@@ -1086,6 +1087,8 @@ function LoginView({ setView, setStaffRole, setStaffUser, setIsAdminUnlocked, se
       if (!result?.ok || !result.user || !result.sessionToken) throw new Error(result?.error || 'Sisselogimine ebaõnnestus.')
       activeSessionToken = result.sessionToken
       activeSessionUser = result.user
+      localStorage.setItem('kp_token', result.sessionToken)
+      localStorage.setItem('kp_user', JSON.stringify(result.user))
       setStaffRole(result.user.role)
       setStaffUser(result.user)
       setPassword('')
@@ -1191,6 +1194,8 @@ function InstructorView({ events, activities, roomDayIndex, onUsageCreated, init
     setInstructor(null)
     activeSessionToken = ''
     activeSessionUser = null
+    localStorage.removeItem('kp_token')
+    localStorage.removeItem('kp_user')
     setSelectedRoomId('')
     setMessage('')
     clearInstructorSession?.()
@@ -2041,7 +2046,8 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
 }
 
 export default function App() {
-  const [view, setViewState] = useState('home')
+  const initialView = activeSessionUser ? (activeSessionUser.role === 'collective' ? 'instructor' : 'admin') : 'home'
+  const [view, setViewState] = useState(initialView)
   const [viewHistory, setViewHistory] = useState([])
   function setView(next) {
     if (view !== next) setViewHistory((history) => [...history, view])
@@ -2053,18 +2059,18 @@ export default function App() {
     setViewState(!activeSessionToken && ['admin', 'instructor', 'collectiveDetail'].includes(previous) ? 'login' : previous)
     setViewHistory(viewHistory.slice(0, -1))
   }
-  const [staffRole, setStaffRole] = useState(null)
-  const [staffUser, setStaffUser] = useState(null)
+  const [staffRole, setStaffRole] = useState(activeSessionUser?.role || null)
+  const [staffUser, setStaffUser] = useState(activeSessionUser || null)
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [selectedCollective, setSelectedCollective] = useState(null)
   const [editCollective, setEditCollective] = useState(null)
   const [collectiveDetailOrigin, setCollectiveDetailOrigin] = useState('admin')
   const [bookingDraft, setBookingDraft] = useState(null)
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(activeSessionUser && ['admin', 'director'].includes(activeSessionUser.role) ? true : false)
   const [sheetUsages, setSheetUsages] = useState([])
   const [bookings, setBookings] = useState([])
-  const [instructorSession, setInstructorSession] = useState(null)
+  const [instructorSession, setInstructorSession] = useState(activeSessionUser?.role === 'collective' ? activeSessionUser : null)
   const [dataStatus, setDataStatus] = useState('Laen ruumikalendrit...')
   const [calendarReady, setCalendarReady] = useState(false)
   const [publicCollectives, setPublicCollectives] = useState(null)
@@ -2167,6 +2173,8 @@ export default function App() {
           try { if (token) await postToAppsScript({ action: 'logout', sessionToken: token }) } catch (error) {}
           activeSessionToken = ''
           activeSessionUser = null
+          localStorage.removeItem('kp_token')
+          localStorage.removeItem('kp_user')
           setIsAdminUnlocked(false)
           setStaffRole(null)
           setStaffUser(null)
