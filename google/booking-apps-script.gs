@@ -1,9 +1,42 @@
+// BEGIN GENERATED ROOM CONFIG
+const ROOM_CONFIG = {
+  "rannu-saal": {
+    "houseId": "rannu",
+    "house": "Rannu rahvamaja",
+    "name": "Suur saal",
+    "bufferBeforeMinutes": 60,
+    "bufferAfterMinutes": 60
+  },
+  "rannu-vaike-saal": {
+    "houseId": "rannu",
+    "house": "Rannu rahvamaja",
+    "name": "Väike saal / koosolekuruum",
+    "bufferBeforeMinutes": 30,
+    "bufferAfterMinutes": 30
+  },
+  "konguta-saal": {
+    "houseId": "konguta",
+    "house": "Konguta rahvamaja",
+    "name": "Saal",
+    "bufferBeforeMinutes": 60,
+    "bufferAfterMinutes": 60
+  },
+  "konguta-valiala": {
+    "houseId": "konguta",
+    "house": "Konguta rahvamaja",
+    "name": "Väliala / laululava ümbrus",
+    "bufferBeforeMinutes": 120,
+    "bufferAfterMinutes": 120
+  }
+}
+// END GENERATED ROOM CONFIG
+
 /**
  * Kultuuripesa broneeringute ja ruumikasutuste API.
  *
  * Töövoog:
  * - Avalik veeb saadab broneeringu Apps Scripti kaudu Google Sheeti.
- * - PIN-koodiga adminivaade loeb ootel/kinnitatud broneeringuid samast Sheetist.
+ * - Sessionipõhine töötajate töölaud loeb ootel/kinnitatud broneeringuid samast Sheetist.
  * - Admin kinnitab/tühistab broneeringu veebivaates.
  * - Kinnitatud broneering ilmub avalikku ruumikalendrisse, sest veeb loeb kinnitatud read Sheetist.
  */
@@ -14,7 +47,7 @@ const SHEET_NAME = 'Broneeringud'
 const DEFAULT_EMAIL = 'meeliskylaots@gmail.com'
 const RANNU_EMAIL = 'meeliskylaots@gmail.com'
 const KONGUTA_EMAIL = 'meeliskylaots@gmail.com'
-const ORGANIZATION_NAME = 'Rannu ja Konguta rahvamajad'
+const ORGANIZATION_NAME = 'Kultuuripesa'
 
 const HEADERS = [
   'Sisestamise aeg',
@@ -53,78 +86,534 @@ const HEADERS = [
   'Kinnituskiri saadetud'
 ]
 
-const INSTRUCTOR_SHEET_NAME = 'Juhendajad'
-const INSTRUCTOR_HEADERS = ['Juhendaja ID', 'Nimi', 'E-post', 'PIN', 'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Aktiivne']
-const DEFAULT_INSTRUCTORS = [
-  ['rahvatants-rannu', 'Rahvatantsurühma juhendaja', 'juhendaja@example.com', '4821', 'Rahvatants', 'Rannu rahvamaja', 'Suur saal', 'rannu-saal', 'rannu-saal,rannu-vaike-saal,konguta-saal', 'jah'],
-  ['kasitoo-konguta', 'Käsitööringi juhendaja', 'kasitoo@example.com', '7394', 'Käsitöö- ja loovtöötuba', 'Konguta rahvamaja', 'Saal', 'konguta-saal', 'konguta-saal,konguta-valiala', 'jah']
+const USER_SHEET_NAME = 'Kasutajad'
+const USER_HEADERS = [
+  'Kasutaja ID', 'Nimi', 'E-post', 'Roll', 'Parooli sool', 'Parooli tuletis',
+  'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Aktiivne',
+  'Loodud', 'Viimane sisselogimine', 'Ebaõnnestunud katsed', 'Blokeeritud kuni',
+  'Parooli muutmise aeg'
 ]
+const PASSWORD_ITERATIONS = 150000
+const SESSION_TTL_SECONDS = 2 * 60 * 60
+const CHALLENGE_TTL_SECONDS = 5 * 60
+const LOCKOUT_THRESHOLD = 5
+const LOCKOUT_SECONDS = 15 * 60
+
+function normalizeEmail_(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function randomToken_() {
+  return Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      Utilities.getUuid() + '|' + Utilities.getUuid() + '|' + new Date().getTime() + '|' + Math.random(),
+      Utilities.Charset.UTF_8
+    )
+  ).replace(/=+$/, '')
+}
+
+function digestBase64_(value) {
+  return Utilities.base64Encode(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''), Utilities.Charset.UTF_8)
+  )
+}
+
+function constantTimeEqual_(left, right) {
+  const a = String(left || '')
+  const b = String(right || '')
+  let result = a.length ^ b.length
+  const length = Math.max(a.length, b.length)
+  for (let i = 0; i < length; i += 1) {
+    result |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
+  }
+  return result === 0
+}
+
+function usersSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID)
+  let sheet = ss.getSheetByName(USER_SHEET_NAME)
+  if (!sheet) sheet = ss.insertSheet(USER_SHEET_NAME)
+  const lastColumn = Math.max(sheet.getLastColumn(), 1)
+  const existing = sheet.getLastRow() > 0
+    ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String)
+    : []
+  if (existing.length === 0) {
+    sheet.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS])
+    sheet.setFrozenRows(1)
+    return sheet
+  }
+  const headers = existing.slice()
+  USER_HEADERS.forEach((header) => { if (!headers.includes(header)) headers.push(header) })
+  if (headers.length !== existing.length) sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  sheet.setFrozenRows(1)
+  return sheet
+}
+
+function userRows_() {
+  const sheet = usersSheet_()
+  const headers = ensureUsersHeader_(sheet)
+  const values = sheet.getDataRange().getValues()
+  return { sheet, headers, map: headerMap_(headers), values }
+}
+
+function ensureUsersHeader_(sheet) {
+  const lastColumn = Math.max(sheet.getLastColumn(), 1)
+  const existing = sheet.getLastRow() > 0
+    ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String)
+    : []
+  if (existing.length === 0) {
+    sheet.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS])
+    sheet.setFrozenRows(1)
+    return USER_HEADERS.slice()
+  }
+  const headers = existing.slice()
+  USER_HEADERS.forEach((header) => { if (!headers.includes(header)) headers.push(header) })
+  if (headers.length !== existing.length) sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+  sheet.setFrozenRows(1)
+  return headers
+}
+
+function userFromRow_(headers, row, rowNumber) {
+  const map = headerMap_(headers)
+  const activeValue = String(row[map['Aktiivne']] === undefined ? 'jah' : row[map['Aktiivne']]).toLowerCase()
+  const active = !['ei', 'false', '0', 'no'].includes(activeValue)
+  return {
+    rowNumber,
+    id: String(row[map['Kasutaja ID']] || ''),
+    name: String(row[map['Nimi']] || ''),
+    email: normalizeEmail_(row[map['E-post']]),
+    role: String(row[map['Roll']] || 'collective').toLowerCase(),
+    salt: String(row[map['Parooli sool']] || ''),
+    verifier: String(row[map['Parooli tuletis']] || ''),
+    collective: String(row[map['Kollektiiv']] || ''),
+    house: String(row[map['Rahvamaja']] || ''),
+    room: String(row[map['Ruum']] || ''),
+    roomId: String(row[map['RoomID']] || ''),
+    allowedRoomIds: String(row[map['Lubatud RoomID-d']] || row[map['RoomID']] || '').split(',').map((item) => item.trim()).filter(Boolean),
+    active,
+    createdAt: row[map['Loodud']] || '',
+    lastLoginAt: row[map['Viimane sisselogimine']] || '',
+    failedAttempts: Number(row[map['Ebaõnnestunud katsed']] || 0),
+    lockedUntil: row[map['Blokeeritud kuni']] || '',
+    passwordChangedAt: row[map['Parooli muutmise aeg']] || ''
+  }
+}
+
+function publicUser_(user) {
+  return {
+    id: user.id, name: user.name, email: user.email, role: user.role,
+    collective: user.collective, house: user.house, room: user.room,
+    roomId: user.roomId, allowedRoomIds: user.allowedRoomIds, active: user.active,
+    lastLoginAt: user.lastLoginAt, passwordChangedAt: user.passwordChangedAt
+  }
+}
+
+function findUserByEmail_(email) {
+  const target = normalizeEmail_(email)
+  const { headers, values } = userRows_()
+  for (let i = 1; i < values.length; i += 1) {
+    const user = userFromRow_(headers, values[i], i + 1)
+    if (user.email === target) return user
+  }
+  return null
+}
+
+function findUserById_(id) {
+  const target = String(id || '')
+  const { headers, values } = userRows_()
+  for (let i = 1; i < values.length; i += 1) {
+    const user = userFromRow_(headers, values[i], i + 1)
+    if (user.id === target) return user
+  }
+  return null
+}
+
+function userCount_() {
+  const { headers, values } = userRows_()
+  return values.slice(1).filter((row) => String(row[headerMap_(headers)['Kasutaja ID']] || '').trim()).length
+}
+
+function sessionCacheKey_(token) {
+  return 'kp:session:' + String(token || '')
+}
+
+function challengeCacheKey_(id) {
+  return 'kp:challenge:' + String(id || '')
+}
+
+function operationCacheKey_(id) {
+  return 'kp:operation:' + String(id || '')
+}
+
+function sessionUser_(token) {
+  const raw = token ? CacheService.getScriptCache().get(sessionCacheKey_(token)) : null
+  if (!raw) return null
+  try {
+    const session = JSON.parse(raw)
+    const user = findUserById_(session.userId)
+    if (!user || !user.active) return null
+    return { ...user, token: String(token) }
+  } catch (error) {
+    return null
+  }
+}
+
+function requireSession_(token) {
+  const user = sessionUser_(token)
+  if (!user) throw new Error('Sisselogimine on aegunud. Logi uuesti sisse.')
+  return user
+}
+
+function requireManager_(token) {
+  const user = requireSession_(token)
+  if (!['director', 'admin'].includes(user.role)) throw new Error('Selle toimingu jaoks puudub õigus.')
+  return user
+}
+
+function authChallenge_(email) {
+  const user = findUserByEmail_(email)
+  if (!user || !user.active) return { ok: false, error: 'Kasutajat ei leitud või ligipääs on suletud.' }
+  if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
+    return { ok: false, error: 'Liiga palju ebaõnnestunud katseid. Proovi hiljem uuesti.' }
+  }
+  if (!user.salt || !user.verifier) return { ok: false, error: 'Kasutaja parool vajab juhataja seadistust.' }
+  const challengeId = randomToken_()
+  const nonce = randomToken_()
+  CacheService.getScriptCache().put(
+    challengeCacheKey_(challengeId),
+    JSON.stringify({ userId: user.id, email: user.email, nonce }),
+    CHALLENGE_TTL_SECONDS
+  )
+  return { ok: true, challengeId, nonce, salt: user.salt, iterations: PASSWORD_ITERATIONS }
+}
+
+function updateUserSecurity_(user, map, sheet, changes) {
+  const row = user.rowNumber
+  Object.keys(changes).forEach((header) => {
+    if (map[header] !== undefined) sheet.getRange(row, map[header] + 1).setValue(safeCell_(changes[header]))
+  })
+}
+
+function authLogin_(email, challengeId, proof) {
+  const cache = CacheService.getScriptCache()
+  const key = challengeCacheKey_(challengeId)
+  const raw = cache.get(key)
+  cache.remove(key)
+  if (!raw) return { ok: false, error: 'Sisselogimine aegus. Proovi uuesti.' }
+  const challenge = JSON.parse(raw)
+  const user = findUserById_(challenge.userId)
+  if (!user || user.email !== normalizeEmail_(email) || !user.active) return { ok: false, error: 'E-post või parool ei sobi.' }
+  if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) return { ok: false, error: 'Liiga palju ebaõnnestunud katseid. Proovi hiljem uuesti.' }
+  const expected = digestBase64_(user.verifier + '|' + challenge.nonce)
+  const { sheet, headers, map } = userRows_()
+  if (!constantTimeEqual_(expected, proof)) {
+    const nextFailed = user.failedAttempts + 1
+    const lockedUntil = nextFailed >= LOCKOUT_THRESHOLD ? new Date(Date.now() + LOCKOUT_SECONDS * 1000) : ''
+    updateUserSecurity_(user, map, sheet, { 'Ebaõnnestunud katsed': nextFailed, 'Blokeeritud kuni': lockedUntil })
+    return { ok: false, error: lockedUntil ? 'Liiga palju ebaõnnestunud katseid. Proovi 15 minuti pärast uuesti.' : 'E-post või parool ei sobi.' }
+  }
+  const token = randomToken_()
+  CacheService.getScriptCache().put(
+    sessionCacheKey_(token),
+    JSON.stringify({ userId: user.id }),
+    SESSION_TTL_SECONDS
+  )
+  updateUserSecurity_(user, map, sheet, { 'Ebaõnnestunud katsed': 0, 'Blokeeritud kuni': '', 'Viimane sisselogimine': new Date() })
+  const fresh = findUserById_(user.id)
+  return { ok: true, sessionToken: token, expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000, user: publicUser_(fresh) }
+}
+
+function bootstrapStatus_() {
+  return { ok: true, needsSetup: userCount_() === 0 }
+}
+
+function bootstrapUser_(payload) {
+  const setupToken = PropertiesService.getScriptProperties().getProperty('USER_SETUP_TOKEN')
+  if (!setupToken || !constantTimeEqual_(setupToken, String(payload.setupToken || ''))) throw new Error('Kasutajate algseadistuse võti ei sobi.')
+  if (userCount_() > 0) throw new Error('Esimene kasutaja on juba loodud.')
+  validateUserPayload_(payload, true)
+  const user = appendUser_(payload, 'director')
+  PropertiesService.getScriptProperties().deleteProperty('USER_SETUP_TOKEN')
+  return { ok: true, user: publicUser_(user) }
+}
+
+function validateUserPayload_(payload, isBootstrap) {
+  const email = normalizeEmail_(payload.email)
+  const name = String(payload.name || '').trim()
+  if (!isValidEmail_(email)) throw new Error('Sisesta korrektne e-posti aadress.')
+  if (name.length < 2 || name.length > 100) throw new Error('Sisesta kasutaja nimi.')
+  if (!payload.passwordSalt || !payload.passwordVerifier) throw new Error('Parooli seadistus puudub.')
+  if (String(payload.passwordVerifier).length < 40 || String(payload.passwordSalt).length < 16) throw new Error('Parooli tuletis ei sobi.')
+  if (!isBootstrap && findUserByEmail_(email)) throw new Error('Selle e-postiga kasutaja on juba olemas.')
+  const role = String(payload.role || 'collective').toLowerCase()
+  if (!['director', 'admin', 'collective'].includes(role)) throw new Error('Roll ei sobi.')
+  if (isBootstrap && role !== 'director') throw new Error('Esimene kasutaja peab olema juhataja.')
+}
+
+function roomIdsForUser_(payload) {
+  const raw = Array.isArray(payload.allowedRoomIds)
+    ? payload.allowedRoomIds
+    : String(payload.allowedRoomIds || payload.roomId || '').split(',')
+  const ids = raw.map((item) => String(item || '').trim()).filter(Boolean)
+  const unique = ids.filter((id, index) => ids.indexOf(id) === index)
+  const invalid = unique.filter((id) => !Object.prototype.hasOwnProperty.call(ROOM_CONFIG, id))
+  if (invalid.length > 0) throw new Error('Kasutaja lubatud ruumide loendis on tundmatu RoomID: ' + invalid.join(', '))
+  return unique
+}
+
+function appendUser_(payload, forcedRole) {
+  const role = forcedRole || String(payload.role || 'collective').toLowerCase()
+  const allowedRoomIds = roomIdsForUser_(payload)
+  if (role === 'collective' && allowedRoomIds.length === 0) throw new Error('Kollektiivi juhile tuleb määrata vähemalt üks lubatud RoomID.')
+  const sheet = usersSheet_()
+  const headers = ensureUsersHeader_(sheet)
+  const userId = 'USR-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss') + '-' + Math.floor(Math.random() * 900 + 100)
+  const values = {}
+  values['Kasutaja ID'] = userId
+  values['Nimi'] = String(payload.name || '').trim()
+  values['E-post'] = normalizeEmail_(payload.email)
+  values['Roll'] = role
+  values['Parooli sool'] = payload.passwordSalt
+  values['Parooli tuletis'] = payload.passwordVerifier
+  values['Kollektiiv'] = payload.collective || ''
+  values['Rahvamaja'] = payload.house || ''
+  values['Ruum'] = payload.room || ''
+  values['RoomID'] = payload.roomId || ''
+  values['Lubatud RoomID-d'] = allowedRoomIds.join(',')
+  values['Aktiivne'] = 'jah'
+  values['Loodud'] = new Date()
+  values['Viimane sisselogimine'] = ''
+  values['Ebaõnnestunud katsed'] = 0
+  values['Blokeeritud kuni'] = ''
+  values['Parooli muutmise aeg'] = new Date()
+  sheet.appendRow(headers.map((header) => safeCell_(values[header] === undefined ? '' : values[header])))
+  return findUserById_(userId)
+}
+
+function createUser_(payload) {
+  const actor = requireManager_(payload.sessionToken)
+  validateUserPayload_(payload, false)
+  const role = String(payload.role || 'collective').toLowerCase()
+  if (actor.role !== 'director' && role !== 'collective') {
+    throw new Error('Administraator saab lisada ainult kollektiivi juhte.')
+  }
+  const user = appendUser_(payload, role)
+  return { ok: true, user: publicUser_(user) }
+}
+
+function listUsers_(token) {
+  const actor = requireManager_(token)
+  const { headers, values } = userRows_()
+  return { ok: true, users: values.slice(1).map((row, index) => publicUser_(userFromRow_(headers, row, index + 2))).filter((user) => user.id) }
+}
+
+function manageUser_(payload) {
+  const actor = requireManager_(payload.sessionToken)
+  const target = findUserById_(payload.userId)
+  if (!target) throw new Error('Kasutajat ei leitud.')
+  if (actor.role !== 'director' && target.role !== 'collective') {
+    throw new Error('Administraator saab hallata ainult kollektiivi juhte.')
+  }
+  const { sheet, map } = userRows_()
+  const action = String(payload.userAction || '')
+  if (action === 'setActive') {
+    if (target.id === actor.id && String(payload.active) !== 'true') throw new Error('Oma kasutajat ei saa siit sulgeda.')
+    const nextActive = String(payload.active) === 'true'
+    if (!nextActive && target.role === 'director') {
+      const directors = Object.values(getAllUsers_()).filter((user) => user.active && user.role === 'director' && user.id !== target.id)
+      if (directors.length === 0) throw new Error('Vähemalt üks aktiivne juhataja peab alles jääma.')
+    }
+    updateUserSecurity_(target, map, sheet, { 'Aktiivne': nextActive ? 'jah' : 'ei' })
+    return { ok: true, user: publicUser_(findUserById_(target.id)) }
+  }
+  if (action === 'setPassword') {
+    if (!payload.passwordSalt || !payload.passwordVerifier) throw new Error('Uue parooli seadistus puudub.')
+    updateUserSecurity_(target, map, sheet, {
+      'Parooli sool': payload.passwordSalt,
+      'Parooli tuletis': payload.passwordVerifier,
+      'Parooli muutmise aeg': new Date(),
+      'Ebaõnnestunud katsed': 0,
+      'Blokeeritud kuni': ''
+    })
+    return { ok: true, user: publicUser_(findUserById_(target.id)) }
+  }
+  if (action === 'updateProfile') {
+    const nextEmail = normalizeEmail_(payload.email || target.email)
+    const duplicate = findUserByEmail_(nextEmail)
+    if (duplicate && duplicate.id !== target.id) throw new Error('Selle e-postiga kasutaja on juba olemas.')
+    if (!isValidEmail_(nextEmail)) throw new Error('Sisesta korrektne e-posti aadress.')
+    const nextName = String(payload.name || target.name).trim()
+    if (nextName.length < 2 || nextName.length > 100) throw new Error('Sisesta kasutaja nimi.')
+    const nextRole = String(payload.role || target.role).toLowerCase()
+    if (actor.role !== 'director' && nextRole !== target.role) throw new Error('Administraator ei saa kasutaja rolli muuta.')
+    if (!['director', 'admin', 'collective'].includes(nextRole)) throw new Error('Roll ei sobi.')
+    const allowedRoomIds = roomIdsForUser_({ ...target, ...payload })
+    if (nextRole === 'collective' && allowedRoomIds.length === 0) throw new Error('Kollektiivi juhile tuleb määrata vähemalt üks lubatud RoomID.')
+    if (target.role === 'director' && target.active && nextRole !== 'director') {
+      const directors = Object.values(getAllUsers_()).filter((user) => user.active && user.role === 'director' && user.id !== target.id)
+      if (directors.length === 0) throw new Error('Vähemalt üks aktiivne juhataja peab alles jääma.')
+    }
+    updateUserSecurity_(target, map, sheet, {
+      'Nimi': nextName,
+      'E-post': nextEmail,
+      'Roll': nextRole,
+      'Kollektiiv': payload.collective || '',
+      'Rahvamaja': payload.house || '',
+      'Ruum': payload.room || '',
+      'RoomID': payload.roomId || '',
+      'Lubatud RoomID-d': allowedRoomIds.join(',')
+    })
+    return { ok: true, user: publicUser_(findUserById_(target.id)) }
+  }
+  throw new Error('Kasutaja toimingut ei tunta.')
+}
+
+function getAllUsers_() {
+  const { headers, values } = userRows_()
+  const result = {}
+  values.slice(1).forEach((row, index) => {
+    const user = userFromRow_(headers, row, index + 2)
+    if (user.id) result[user.id] = user
+  })
+  return result
+}
+
+function operationResult_(payload, result) {
+  if (payload && payload.requestId) {
+    const actor = payload.sessionToken ? sessionUser_(payload.sessionToken) : null
+    CacheService.getScriptCache().put(
+      operationCacheKey_(payload.requestId),
+      JSON.stringify({ actorId: actor?.id || '', result }),
+      120
+    )
+  }
+  return result
+}
+
+function operationStatus_(requestId, token) {
+  const raw = CacheService.getScriptCache().get(operationCacheKey_(requestId))
+  if (!raw) return { ok: false, pending: true }
+  const operation = JSON.parse(raw)
+  if (operation.actorId && (!token || sessionUser_(token)?.id !== operation.actorId)) {
+    return { ok: false, pending: false, error: 'Selle toimingu vaatamiseks puudub õigus.' }
+  }
+  CacheService.getScriptCache().remove(operationCacheKey_(requestId))
+  return operation.result
+}
 
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {}
   const action = params.action || 'ping'
   const callback = params.callback
-
   let data
   try {
-    if (action === 'list') {
-      data = listBookings_()
-    } else if (action === 'authInstructor') {
-      data = authInstructor_(params.pin)
-    } else {
-      data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
-    }
-  } catch (error) {
-    data = { ok: false, error: String(error) }
+    if (action === 'authChallenge') data = authChallenge_(params.email)
+    else if (action === 'authLogin') data = authLogin_(params.email, params.challengeId, params.proof)
+    else if (action === 'bootstrapStatus') data = bootstrapStatus_()
+    else if (action === 'list') data = listBookings_(params.session)
+    else if (action === 'listUsers') data = listUsers_(params.session)
+    else if (action === 'operationStatus') data = operationStatus_(params.requestId, params.session)
+    else data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
+  } catch (error) { data = { ok: false, error: String(error) } }
+  if (callback && !/^[$A-Z_][0-9A-Z_$]*$/i.test(callback)) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Vigane callback.' })).setMimeType(ContentService.MimeType.JSON)
   }
-
-  if (callback) {
-    return ContentService
-      .createTextOutput(`${callback}(${JSON.stringify(data)})`)
-      .setMimeType(ContentService.MimeType.JAVASCRIPT)
-  }
-
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON)
+  if (callback) return ContentService.createTextOutput(`${callback}(${JSON.stringify(data)})`).setMimeType(ContentService.MimeType.JAVASCRIPT)
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON)
 }
 
 function doPost(e) {
+  let lock
+  let payload = {}
   try {
-    if (!e || !e.postData || !e.postData.contents) {
-      throw new Error('Päringu sisu puudub.')
-    }
-
-    const payload = JSON.parse(e.postData.contents)
-
+    if (!e || !e.postData || !e.postData.contents) throw new Error('Päringu sisu puudub.')
+    payload = JSON.parse(e.postData.contents)
+    lock = LockService.getScriptLock()
+    if (!lock.tryLock(10000)) throw new Error('Teine salvestus on pooleli. Proovi uuesti.')
+    let result
     if (payload.action === 'updateStatus') {
-      return jsonResponse_(updateStatus_(payload))
+      requireManager_(payload.sessionToken)
+      result = updateStatus_(payload)
+    } else if (payload.action === 'createUsage') {
+      result = createUsage_(payload)
+    } else if (payload.action === 'createUser') {
+      result = createUser_(payload)
+    } else if (payload.action === 'manageUser') {
+      result = manageUser_(payload)
+    } else if (payload.action === 'logout') {
+      const user = sessionUser_(payload.sessionToken)
+      if (payload.sessionToken) CacheService.getScriptCache().remove(sessionCacheKey_(payload.sessionToken))
+      result = { ok: true, userId: user?.id || '' }
+    } else if (payload.action === 'bootstrapUser') {
+      result = bootstrapUser_(payload)
+    } else {
+      result = createBooking_(payload)
     }
-
-    if (payload.action === 'createUsage') {
-      return jsonResponse_(createUsage_(payload))
-    }
-
-    return jsonResponse_(createBooking_(payload))
+    return jsonResponse_(operationResult_(payload, result))
   } catch (error) {
-    return jsonResponse_({ ok: false, error: String(error) })
+    return jsonResponse_(operationResult_(payload, { ok: false, error: String(error) }))
+  } finally {
+    if (lock && lock.hasLock()) {
+      SpreadsheetApp.flush()
+      lock.releaseLock()
+    }
   }
+}
+
+function validateRoomTime_(payload) {
+  const room = Object.prototype.hasOwnProperty.call(ROOM_CONFIG, payload.roomId) ? ROOM_CONFIG[payload.roomId] : null
+  if (!room) throw new Error('Ruum ei ole broneerimiseks avatud.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || ''))) throw new Error('Kuupäev ei sobi.')
+  const parsed = new Date(payload.date + 'T12:00:00Z')
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== payload.date) throw new Error('Kuupäev ei sobi.')
+  const today = Utilities.formatDate(new Date(), 'Europe/Tallinn', 'yyyy-MM-dd')
+  if (payload.date < today) throw new Error('Minevikku ei saa broneeringut lisada.')
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+  if (!timePattern.test(String(payload.startTime)) || !timePattern.test(String(payload.endTime))) throw new Error('Kellaaeg ei sobi.')
+  const minutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
+  const start = minutes(payload.startTime)
+  const end = minutes(payload.endTime)
+  if (end <= start) throw new Error('Lõpuaeg peab olema algusajast hilisem.')
+  const format = (value) => String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0')
+  payload.house = room.house
+  payload.roomName = room.name
+  payload.bufferBeforeMinutes = room.bufferBeforeMinutes
+  payload.bufferAfterMinutes = room.bufferAfterMinutes
+  payload.reservedStartTime = format(Math.max(0, start - room.bufferBeforeMinutes))
+  payload.reservedEndTime = format(Math.min(1440, end + room.bufferAfterMinutes))
+}
+
+function assertRoomAvailable_(payload, excludeId) {
+  const bookings = listBookings_().usages
+  const conflict = bookings.some((item) => item.roomId === payload.roomId && item.date === payload.date &&
+    String(item.bookingId) !== String(excludeId || '') &&
+    (item.reservedStartTime || item.startTime) < payload.reservedEndTime &&
+    (item.reservedEndTime || item.endTime) > payload.reservedStartTime)
+  if (conflict) throw new Error('Valitud ruum on sellel ajal juba kasutuses või ootel. Vali teine aeg.')
+}
+
+function safeCell_(value) {
+  return typeof value === 'string' && /^[=+@-]/.test(value) ? "'" + value : value
 }
 
 function testSetup() {
   const sheet = getOrCreateSheet_()
   ensureHeader_(sheet)
-  ensureInstructorSheet_()
+  usersSheet_()
   MailApp.sendEmail({
     to: Session.getActiveUser().getEmail(),
     subject: 'Kultuuripesa Apps Script töötab',
-    htmlBody: '<h2>Test õnnestus</h2><p>Google Sheet on leitav ja e-kirjade saatmine töötab.</p>',
+    htmlBody: '<h2>Test õnnestus</h2><p>Google Sheet ja kasutajate leht on leitavad ning e-kirjade saatmine töötab.</p>',
     name: ORGANIZATION_NAME
   })
 }
 
 function createBooking_(payload) {
   validatePayload_(payload)
+  validateRoomTime_(payload)
+  assertRoomAvailable_(payload)
+  payload.status = 'ootel'
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
@@ -168,9 +657,9 @@ function createBooking_(payload) {
     'Kinnituskiri saadetud': ''
   }
 
-  sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
+  sheet.appendRow(headers.map((header) => safeCell_(rowObject[header] !== undefined ? rowObject[header] : '')))
 
-  const staffEmail = getStaffEmail_(payload.house, payload.roomEmail)
+  const staffEmail = getStaffEmail_(payload.house)
   sendStaffEmail_(staffEmail, payload, bookingId)
   sendClientReceivedEmail_(payload, bookingId)
 
@@ -178,9 +667,27 @@ function createBooking_(payload) {
 }
 
 function createUsage_(payload) {
+  const actor = requireSession_(payload.sessionToken)
+  if (actor.role === 'collective') {
+    if (!actor.allowedRoomIds.includes(String(payload.roomId || ''))) throw new Error('Selle ruumi kasutamiseks puudub õigus.')
+    payload.instructorId = actor.id
+    payload.status = 'ootel'
+    payload.name = actor.name
+    payload.email = actor.email
+    payload.collective = actor.collective
+  } else if (['director', 'admin'].includes(actor.role)) {
+    payload.instructorId = actor.id
+    payload.status = payload.status === 'kinnitatud' ? 'kinnitatud' : 'ootel'
+    payload.name = actor.name
+    payload.email = actor.email
+  } else {
+    throw new Error('Selle toimingu jaoks puudub õigus.')
+  }
   const requiredFields = ['house', 'roomName', 'roomId', 'date', 'startTime', 'endTime', 'name', 'email', 'publicTitle']
   const missing = requiredFields.filter(field => !payload[field])
   if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
+  validateRoomTime_(payload)
+  assertRoomAvailable_(payload)
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
@@ -223,7 +730,7 @@ function createUsage_(payload) {
     'Kinnituskiri saadetud': ''
   }
 
-  sheet.appendRow(headers.map((header) => rowObject[header] !== undefined ? rowObject[header] : ''))
+  sheet.appendRow(headers.map((header) => safeCell_(rowObject[header] !== undefined ? rowObject[header] : '')))
 
   MailApp.sendEmail({
     to: DEFAULT_EMAIL,
@@ -235,61 +742,6 @@ function createUsage_(payload) {
   return { ok: true, bookingId: usageId, message: 'Sisestus saadeti kinnitamiseks.' }
 }
 
-function authInstructor_(pin) {
-  const normalizedPin = String(pin || '').trim()
-  if (!normalizedPin) return { ok: false, error: 'PIN puudub.' }
-
-  const sheet = ensureInstructorSheet_()
-  const values = sheet.getDataRange().getValues()
-  const headers = values[0]
-  const map = headerMap_(headers)
-
-  for (let i = 1; i < values.length; i += 1) {
-    const row = values[i]
-    const active = String(row[map['Aktiivne']] || '').toLowerCase()
-    const rowPin = String(row[map['PIN']] || '').trim()
-    if (rowPin === normalizedPin && !['ei', 'false', '0'].includes(active)) {
-      return {
-        ok: true,
-        instructor: {
-          id: row[map['Juhendaja ID']] || '',
-          name: row[map['Nimi']] || '',
-          email: row[map['E-post']] || '',
-          pin: rowPin,
-          collective: row[map['Kollektiiv']] || '',
-          house: row[map['Rahvamaja']] || '',
-          room: row[map['Ruum']] || '',
-          roomId: row[map['RoomID']] || '',
-          allowedRoomIds: String(row[map['Lubatud RoomID-d']] || row[map['RoomID']] || '').split(',').map(function(item) { return item.trim() }).filter(Boolean),
-          active: true
-        }
-      }
-    }
-  }
-
-  return { ok: false, error: 'Juhendajat ei leitud või PIN ei sobi.' }
-}
-
-function ensureInstructorSheet_() {
-  const ss = SpreadsheetApp.openById(SHEET_ID)
-  let sheet = ss.getSheetByName(INSTRUCTOR_SHEET_NAME)
-  if (!sheet) sheet = ss.insertSheet(INSTRUCTOR_SHEET_NAME)
-
-  const lastColumn = Math.max(sheet.getLastColumn(), 1)
-  const existing = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(String) : []
-  if (existing.length === 0) {
-    sheet.getRange(1, 1, 1, INSTRUCTOR_HEADERS.length).setValues([INSTRUCTOR_HEADERS])
-    sheet.getRange(2, 1, DEFAULT_INSTRUCTORS.length, INSTRUCTOR_HEADERS.length).setValues(DEFAULT_INSTRUCTORS)
-    sheet.setFrozenRows(1)
-    return sheet
-  }
-
-  const headers = existing.slice()
-  INSTRUCTOR_HEADERS.forEach((header) => { if (!headers.includes(header)) headers.push(header) })
-  if (headers.length !== existing.length) sheet.getRange(1, 1, 1, headers.length).setValues([headers])
-  sheet.setFrozenRows(1)
-  return sheet
-}
 
 function createUsageId_() {
   const now = new Date()
@@ -299,6 +751,7 @@ function createUsageId_() {
 }
 
 function updateStatus_(payload) {
+  if (!['kinnitatud', 'tühistatud'].includes(payload.status)) throw new Error('Staatus ei sobi.')
   const bookingId = payload.bookingId || payload.id
   if (!bookingId) throw new Error('Broneeringu ID puudub.')
 
@@ -312,6 +765,14 @@ function updateStatus_(payload) {
   for (let i = 1; i < values.length; i += 1) {
     if (String(values[i][idCol]) === String(bookingId)) {
       const rowNumber = i + 1
+      if (payload.status === 'kinnitatud') {
+        const booking = sheetRowToBooking_(rowToObject_(headers, values[i]), rowNumber)
+        if (booking.status === 'tühistatud') throw new Error('Tühistatud kirjet ei saa uuesti kinnitada. Loo uus soov.')
+        validateRoomTime_(booking)
+        assertRoomAvailable_(booking, bookingId)
+        setCell_(sheet, map, rowNumber, 'Ruum kinni alates', booking.reservedStartTime)
+        setCell_(sheet, map, rowNumber, 'Ruum kinni kuni', booking.reservedEndTime)
+      }
       setCell_(sheet, map, rowNumber, 'Staatus', payload.status || 'ootel')
       if (payload.publicTitle !== undefined) setCell_(sheet, map, rowNumber, 'Avaliku kalendri tekst', payload.publicTitle)
       if (payload.displayMode !== undefined) setCell_(sheet, map, rowNumber, 'Kuvamise viis', payload.displayMode)
@@ -333,20 +794,29 @@ function updateStatus_(payload) {
   throw new Error('Broneeringut ei leitud: ' + bookingId)
 }
 
-function listBookings_() {
+function listBookings_(sessionToken) {
+  const actor = sessionUser_(sessionToken)
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
   const values = sheet.getDataRange().getValues()
   const bookings = []
-
   for (let i = 1; i < values.length; i += 1) {
     const row = rowToObject_(headers, values[i])
     if (!row['Broneeringu ID']) continue
     bookings.push(sheetRowToBooking_(row, i + 1))
   }
-
-  const usages = bookings.filter((item) => !['tühistatud', 'tuhistatud', 'cancelled'].includes(String(item.status || '').toLowerCase()))
-  return { ok: true, bookings, usages }
+  const usages = bookings
+    .filter((item) => !['tühistatud', 'tuhistatud', 'cancelled'].includes(String(item.status || '').toLowerCase()))
+    .map((item) => ({
+      id: item.id, bookingId: item.bookingId, type: item.type, status: item.status,
+      house: item.house, roomName: item.roomName, roomId: item.roomId, date: item.date,
+      dateISO: item.dateISO, startTime: item.startTime, endTime: item.endTime,
+      reservedStartTime: item.reservedStartTime, reservedEndTime: item.reservedEndTime,
+      eventType: item.eventType, publicEvent: item.publicEvent, publicTitle: item.publicTitle,
+      displayMode: item.displayMode
+    }))
+  const isManager = actor && ['director', 'admin'].includes(actor.role)
+  return { ok: true, bookings: isManager ? bookings : [], usages }
 }
 
 function sheetRowToBooking_(row, rowNumber) {
@@ -434,7 +904,7 @@ function rowToObject_(headers, row) {
 
 function setCell_(sheet, map, rowNumber, header, value) {
   if (map[header] === undefined) return
-  sheet.getRange(rowNumber, map[header] + 1).setValue(value)
+  sheet.getRange(rowNumber, map[header] + 1).setValue(safeCell_(value))
 }
 
 function validatePayload_(payload) {
@@ -451,8 +921,7 @@ function createBookingId_() {
   return `BR-${datePart}-${randomPart}`
 }
 
-function getStaffEmail_(house, roomEmail) {
-  if (roomEmail && isValidEmail_(roomEmail)) return roomEmail
+function getStaffEmail_(house) {
   const houseText = String(house || '').toLowerCase()
   if (houseText.includes('rannu')) return RANNU_EMAIL
   if (houseText.includes('konguta')) return KONGUTA_EMAIL
