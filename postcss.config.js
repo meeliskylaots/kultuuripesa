@@ -1,6 +1,7 @@
 export default {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {}
-  }
+  content: ['./index.html', './src/**/*.{js,jsx}'],
+  theme: {
+    extend: {}
+  },
+  plugins: []
 }
