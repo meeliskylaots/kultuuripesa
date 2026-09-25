@@ -294,8 +294,8 @@ async function postToAppsScript(payload) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
   })
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 350))
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 250))
     try {
       const result = await jsonp(bookingSettings.appsScriptUrl, {
         action: 'operationStatus',
@@ -307,7 +307,7 @@ async function postToAppsScript(payload) {
       return result
     } catch (error) {
       if (error?.message && error.message !== 'Päring aegus.') throw error
-      if (attempt === 11) throw error
+      if (attempt === 7) throw error
     }
   }
   throw new Error('Salvestuse kinnitamine aegus. Kontrolli töölauda enne uuesti saatmist.')
@@ -1502,6 +1502,20 @@ function UserManagement({ role }) {
     }
     if (form.role === 'collective' && !form.roomId.trim() && !form.allowedRoomIds.trim()) {
       setError('Kollektiivi juhile määra vähemalt üks lubatud RoomID.')
+      return
+    }
+    const allowedRoomIds = form.allowedRoomIds
+      .split(',')
+      .map((roomId) => roomId.trim())
+      .filter(Boolean)
+    const knownRoomIds = new Set(rentalRooms.map((room) => room.id))
+    const invalidRoomIds = allowedRoomIds.filter((roomId) => !knownRoomIds.has(roomId))
+    if (form.roomId.trim() && !knownRoomIds.has(form.roomId.trim())) {
+      setError(`Põhiruumi RoomID ei ole tuntud. Kasuta ühte neist: ${rentalRooms.map((room) => room.id).join(', ')}.`)
+      return
+    }
+    if (invalidRoomIds.length > 0) {
+      setError(`Lubatud RoomID-d ei ole tuntud: ${invalidRoomIds.join(', ')}. Kasuta täpseid ID-sid, näiteks konguta-saal.`)
       return
     }
     setBusy(true)
