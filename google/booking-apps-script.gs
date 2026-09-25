@@ -84,7 +84,8 @@ const HEADERS = [
   'Avaliku kalendri tekst',
   'Kuvamise viis',
   'Kinnitamise aeg',
-  'Kinnituskiri saadetud'
+  'Kinnituskiri saadetud',
+  'Asendab broneeringut'
 ]
 
 const USER_SHEET_NAME = 'Kasutajad'
@@ -101,6 +102,8 @@ const LOCKOUT_THRESHOLD = 5
 const LOCKOUT_SECONDS = 15 * 60
 
 const COLLECTIVE_SHEET_NAME = 'Kollektiivid'
+const COLLECTIVE_CHANGES_SHEET_NAME = 'Kollektiivi muudatused'
+const COLLECTIVE_CHANGE_HEADERS = ['Muudatuse ID', 'Kollektiivi ID', 'Esitaja ID', 'Esitamise aeg', 'Andmed JSON', 'Staatus', 'Otsustaja ID', 'Otsuse aeg']
 const COLLECTIVE_HEADERS = [
   'Kollektiivi ID', 'Nimi', 'Juhi kasutaja ID', 'Juhi e-post',
   'Rahvamaja', 'Ruum', 'Proovipäev', 'Algus', 'Lõpp', 'Kontakt e-post', 'Telefon', 'Koduleht', 'Sotsiaalmeedia', 'Kirjeldus', 'Aktiivne'
@@ -509,6 +512,57 @@ function listCollectives_(token) {
   }
 }
 
+function collectiveChangesSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID)
+  let sheet = ss.getSheetByName(COLLECTIVE_CHANGES_SHEET_NAME)
+  if (!sheet) sheet = ss.insertSheet(COLLECTIVE_CHANGES_SHEET_NAME)
+  if (sheet.getLastRow() === 0) sheet.appendRow(COLLECTIVE_CHANGE_HEADERS)
+  return sheet
+}
+
+function listCollectiveChanges_(token) {
+  const actor = requireCollectiveEditor_(token)
+  const rows = collectiveChangesSheet_().getDataRange().getValues().slice(1)
+  return { ok: true, changes: rows.filter((row) => actor.role !== 'collective' || String(row[2]) === actor.id)
+    .map((row) => ({ id: String(row[0]), collectiveId: String(row[1]), submittedBy: String(row[2]),
+      submittedAt: String(row[3]), changes: JSON.parse(String(row[4] || '{}')), status: String(row[5]) })) }
+}
+
+function requestCollectiveUpdate_(payload) {
+  const actor = requireCollectiveEditor_(payload.sessionToken)
+  const existing = listCollectives_(payload.sessionToken).collectives.find((item) => item.id === String(payload.collectiveId))
+  if (!existing) throw new Error('Kollektiivi ei leitud või sul puudub ligipääs.')
+  const validated = validateCollectivePayload_({ ...payload, leaderUserId: existing.leaderUserId,
+    roomId: existing.roomId, weekday: existing.weekday, startTime: existing.startTime,
+    endTime: existing.endTime }, existing.id)
+  const changes = { name: validated.name, leaderUserId: existing.leaderUserId,
+    roomId: existing.roomId, weekday: existing.weekday, startTime: existing.startTime,
+    endTime: existing.endTime, contactEmail: validated.contactEmail, phone: validated.phone,
+    website: validated.website, socialMedia: validated.socialMedia, description: validated.description }
+  const sheet = collectiveChangesSheet_()
+  if (sheet.getDataRange().getValues().slice(1).some((row) => String(row[1]) === existing.id && String(row[5]) === 'ootel')) {
+    throw new Error('Selle kollektiivi muudatus juba ootab kinnitamist.')
+  }
+  const id = 'KOM-' + Utilities.getUuid()
+  sheet.appendRow([id, existing.id, actor.id, new Date(), JSON.stringify(changes), 'ootel', '', ''])
+  return { ok: true, id }
+}
+
+function decideCollectiveChange_(payload) {
+  const actor = requireManager_(payload.sessionToken)
+  const sheet = collectiveChangesSheet_()
+  const rows = sheet.getDataRange().getValues()
+  const index = rows.findIndex((row, position) => position > 0 && String(row[0]) === String(payload.changeId))
+  if (index < 1 || String(rows[index][5]) !== 'ootel') throw new Error('Ootel muudatust ei leitud.')
+  if (!['kinnitatud', 'tagasi lükatud'].includes(payload.decision)) throw new Error('Otsus ei sobi.')
+  if (payload.decision === 'kinnitatud') {
+    const changes = JSON.parse(String(rows[index][4]))
+    updateCollective_({ ...changes, collectiveId: String(rows[index][1]), sessionToken: payload.sessionToken })
+  }
+  sheet.getRange(index + 1, 6, 1, 3).setValues([[payload.decision, actor.id, new Date()]])
+  return { ok: true }
+}
+
 function validateCollectivePayload_(payload, existingId) {
   const name = String(payload.name || '').trim()
   if (name.length < 2 || name.length > 100) throw new Error('Sisesta kollektiivi nimi.')
@@ -554,7 +608,7 @@ function weeklyDates_(startISO, endISO, weekday) {
 }
 
 function createCollective_(payload) {
-  const actor = requireCollectiveEditor_(payload.sessionToken)
+  const actor = requireManager_(payload.sessionToken)
   const validated = validateCollectivePayload_(payload)
   if (actor.role === 'collective' && validated.leader.id !== actor.id) {
     throw new Error('Kollektiivijuht saab luua ainult enda kollektiivi.')
@@ -605,6 +659,14 @@ function updateCollective_(payload) {
   const existing = collectiveFromRow_(headers, values[index], index + 1)
   if (actor.role === 'collective' && existing.leaderUserId !== actor.id) {
     throw new Error('Sul puudub selle kollektiivi muutmise õigus.')
+  }
+  if (actor.role === 'collective') throw new Error('Saada kollektiivi andmete muutmise taotlus kooskõlastamiseks.')
+  if (validated.roomId !== existing.roomId || validated.weekday !== existing.weekday ||
+      validated.startTime !== existing.startTime || validated.endTime !== existing.endTime) {
+    throw new Error('Proovigraafikut muuda üksikute proovide kaudu. Nii jäävad kalendris kinnitatud ajad kehtima kuni muudatuse kooskõlastamiseni.')
+  }
+  if (actor.role === 'collective' && validated.leader.id !== actor.id) {
+    throw new Error('Kollektiivijuht ei saa kollektiivi teisele juhile üle anda.')
   }
   const row = index + 1
   const changes = {
@@ -728,6 +790,7 @@ function doGet(e) {
     else if (action === 'list') data = listBookings_(params.session)
     else if (action === 'listUsers') data = listUsers_(params.session)
     else if (action === 'listCollectives') data = listCollectives_(params.session)
+    else if (action === 'listCollectiveChanges') data = listCollectiveChanges_(params.session)
     else if (action === 'operationStatus') data = operationStatus_(params.requestId, params.session)
     else data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
   } catch (error) { data = { ok: false, error: String(error) } }
@@ -753,6 +816,7 @@ function doPost(e) {
     } else if (payload.action === 'cancelSeries') {
       result = cancelSeries_(payload)
     } else if (payload.action === 'createUsage') {
+      delete payload.__rescheduleTarget
       result = createUsage_(payload)
     } else if (payload.action === 'createUser') {
       result = createUser_(payload)
@@ -760,6 +824,12 @@ function doPost(e) {
       result = createCollective_(payload)
     } else if (payload.action === 'updateCollective') {
       result = updateCollective_(payload)
+    } else if (payload.action === 'requestCollectiveUpdate') {
+      result = requestCollectiveUpdate_(payload)
+    } else if (payload.action === 'decideCollectiveChange') {
+      result = decideCollectiveChange_(payload)
+    } else if (payload.action === 'requestReschedule') {
+      result = requestReschedule_(payload)
     } else if (payload.action === 'manageUser') {
       result = manageUser_(payload)
     } else if (payload.action === 'logout') {
@@ -808,7 +878,7 @@ function validateRoomTime_(payload) {
 function assertRoomAvailable_(payload, excludeId) {
   const bookings = listBookings_().usages
   const conflict = bookings.some((item) => item.roomId === payload.roomId && item.date === payload.date &&
-    String(item.bookingId) !== String(excludeId || '') &&
+    !(Array.isArray(excludeId) ? excludeId : [excludeId]).map(String).includes(String(item.bookingId)) &&
     (item.reservedStartTime || item.startTime) < payload.reservedEndTime &&
     (item.reservedEndTime || item.endTime) > payload.reservedStartTime)
   if (conflict) throw new Error('Valitud ruum on sellel ajal juba kasutuses või ootel. Vali teine aeg.')
@@ -896,7 +966,7 @@ function createUsage_(payload) {
     payload.status = 'ootel'
     payload.name = actor.name
     payload.email = actor.email
-    payload.collective = actor.collective
+    payload.collective = payload.__rescheduleTarget ? payload.collective : (payload.collective || actor.collective)
   } else if (['director', 'admin'].includes(actor.role)) {
     payload.instructorId = actor.id
     payload.status = payload.status === 'kinnitatud' ? 'kinnitatud' : 'ootel'
@@ -917,7 +987,7 @@ function createUsage_(payload) {
   const missing = requiredFields.filter(field => !payload[field])
   if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
   validateRoomTime_(payload)
-  assertRoomAvailable_(payload)
+  assertRoomAvailable_(payload, payload.__rescheduleTarget || '')
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
@@ -954,6 +1024,7 @@ function createUsage_(payload) {
     'Orienteeruv koguhind': '',
     'Lisainfo': payload.notes || '',
     'Seeria ID': payload.seriesId || '',
+    'Asendab broneeringut': payload.__rescheduleTarget || '',
     'Märkus hinna kohta': payload.disclaimer || '',
     'Avaliku kalendri tekst': payload.publicTitle || 'Ringitegevus',
     'Kuvamise viis': payload.displayMode || 'category',
@@ -1001,9 +1072,15 @@ function updateStatus_(payload) {
       const rowNumber = i + 1
       if (nextStatus === 'kinnitatud') {
         const booking = sheetRowToBooking_(rowToObject_(headers, values[i]), rowNumber)
+        const replacedId = String(map['Asendab broneeringut'] === undefined ? '' : values[i][map['Asendab broneeringut']] || '')
         if (booking.status === 'tühistatud') throw new Error('Tühistatud kirjet ei saa uuesti kinnitada. Loo uus soov.')
         validateRoomTime_(booking)
-        assertRoomAvailable_(booking, bookingId)
+        if (replacedId) {
+          const oldRow = values.findIndex((value, index) => index > 0 && String(value[idCol]) === replacedId)
+          if (oldRow < 1 || String(values[oldRow][map['Staatus']]).toLowerCase() === 'tühistatud') throw new Error('Algset proovi ei leitud või see on juba tühistatud.')
+          assertRoomAvailable_(booking, [bookingId, replacedId])
+          setCell_(sheet, map, oldRow + 1, 'Staatus', 'tühistatud')
+        } else assertRoomAvailable_(booking, bookingId)
         setCell_(sheet, map, rowNumber, 'Ruum kinni alates', booking.reservedStartTime)
         setCell_(sheet, map, rowNumber, 'Ruum kinni kuni', booking.reservedEndTime)
       }
@@ -1027,6 +1104,45 @@ function updateStatus_(payload) {
   }
 
   throw new Error('Broneeringut ei leitud: ' + bookingId)
+}
+
+function requestReschedule_(payload) {
+  const actor = requireCollectiveEditor_(payload.sessionToken)
+  const id = String(payload.bookingId || '').trim()
+  const { sheet } = { sheet: getOrCreateSheet_() }
+  const headers = ensureHeader_(sheet)
+  const rows = sheet.getDataRange().getValues().slice(1).map((values, index) => ({
+    row: rowToObject_(headers, values), number: index + 2
+  }))
+  const match = rows.find(({ row }) => String(row['Broneeringu ID']) === id)
+  if (!match) throw new Error('Proovi ei leitud.')
+  const old = sheetRowToBooking_(match.row, match.number)
+  if (!['kinnitatud', 'ootel'].includes(old.status) || old.type === 'Prooviaja muudatus' || !old.instructorId || old.date < Utilities.formatDate(new Date(), 'Europe/Tallinn', 'yyyy-MM-dd')) {
+    throw new Error('Muuta saab ainult tulevast aktiivset proovi.')
+  }
+  if (actor.role === 'collective' && old.instructorId !== actor.id) throw new Error('See proov ei kuulu sinu kollektiivile.')
+  if (rows.some(({ row }) => String(row['Asendab broneeringut']) === id && String(row['Staatus']).toLowerCase() === 'ootel')) {
+    throw new Error('Selle proovi muudatus juba ootab kinnitamist.')
+  }
+  const roomId = String(payload.roomId || old.roomId)
+  if (actor.role === 'collective' && !actor.allowedRoomIds.includes(roomId)) throw new Error('See ruum ei ole sulle lubatud.')
+  const room = ROOM_CONFIG[roomId]
+  if (!room) throw new Error('Ruum ei sobi.')
+  const proposal = {
+    action: 'createUsage', sessionToken: payload.sessionToken,
+    roomId, house: room.house, roomName: room.name,
+    date: String(payload.date || ''), startTime: String(payload.startTime || ''), endTime: String(payload.endTime || ''),
+    type: 'Prooviaja muudatus', publicTitle: old.publicTitle || old.collective || 'Proov',
+    displayMode: old.displayMode || 'category', collective: old.collective,
+    collectiveLeaderId: old.instructorId, notes: 'Asendab proovi ' + id,
+    __rescheduleTarget: id
+  }
+  validateRoomTime_(proposal)
+  if (proposal.date === old.date && proposal.startTime === old.startTime && proposal.endTime === old.endTime && roomId === old.roomId) {
+    throw new Error('Vali uus aeg või ruum.')
+  }
+  assertRoomAvailable_(proposal, id)
+  return createUsage_(proposal)
 }
 
 function cancelSeries_(payload) {
@@ -1077,7 +1193,7 @@ function listBookings_(sessionToken) {
       displayMode: item.displayMode
     }))
   const isManager = actor && ['director', 'admin'].includes(actor.role)
-  return { ok: true, bookings: isManager ? bookings : [], usages }
+  return { ok: true, bookings: isManager ? bookings : (actor?.role === 'collective' ? bookings.filter((item) => item.instructorId === actor.id) : []), usages }
 }
 
 function sheetRowToBooking_(row, rowNumber) {
