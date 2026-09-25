@@ -1790,16 +1790,17 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
       return
     }
 
-    async function cancelSeries(seriesId) {
-      if (!window.confirm(`Kas tühistada kogu seeria ${seriesId}?`)) return
-      try {
-        await postToAppsScript({ action: 'cancelSeries', seriesId })
-        await refreshData()
-      } catch (error) { window.alert(error.message) }
-    }
     try {
       await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
       updateLocalBooking(id, { status: 'tühistatud' })
+      await refreshData()
+    } catch (error) { window.alert(error.message) }
+  }
+
+  async function cancelSeries(seriesId) {
+    if (!window.confirm(`Kas tühistada kogu seeria ${seriesId}?`)) return
+    try {
+      await postToAppsScript({ action: 'cancelSeries', seriesId })
       await refreshData()
     } catch (error) { window.alert(error.message) }
   }
