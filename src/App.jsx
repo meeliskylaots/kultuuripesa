@@ -1258,6 +1258,7 @@ function InstructorView({ events, activities, roomDayIndex, onUsageCreated, init
         phone: '',
         publicTitle: form.publicTitle,
         displayMode: form.displayMode,
+        seriesId,
         notes: [form.notes, seriesId ? `Korduv tegevus: ${recurrenceSummary(form)}. Seeria ID: ${seriesId}. Kord ${index + 1}/${usageDates.length}.` : ''].filter(Boolean).join('\n'),
         disclaimer: 'Juhendaja sisestus ootab juhataja või administraatori kinnitust.',
         suppressStaffEmail: form.recurrence === 'weekly' && index > 0
@@ -1389,6 +1390,7 @@ function AdminUsageForm({ selectedRole, events, activities, roomDayIndex, onCrea
         phone: '',
         publicTitle: form.displayMode === 'neutral' ? 'Rahvamaja kasutuses' : form.publicTitle,
         displayMode: form.displayMode,
+        seriesId,
         notes: [form.notes, seriesId ? `Korduv tegevus: ${recurrenceSummary(form)}. Seeria ID: ${seriesId}. Kord ${index + 1}/${usageDates.length}.` : ''].filter(Boolean).join('\n'),
         disclaimer: status === 'kinnitatud' ? 'Sisestatud ja kinnitatud töötaja vaates.' : 'Sisestatud töötaja vaates ja jäetud ootele.',
         suppressStaffEmail: (form.recurrence === 'weekly' && index > 0) || status === 'kinnitatud'
@@ -1449,8 +1451,9 @@ function AdminUsageForm({ selectedRole, events, activities, roomDayIndex, onCrea
 }
 
 
-function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle }) {
+function AdminBookingCard({ booking, onApprove, onCancel, onCancelSeries, onUpdatePublicTitle }) {
   const room = getRoomById(booking.roomId || roomIdFromHouseAndRoom(booking.house, booking.roomName || booking.room))
+  const seriesId = booking.seriesId || booking.notes?.match(/Seeria ID:\s*([^\s.]+)/i)?.[1] || ''
   return (
     <article className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1470,6 +1473,7 @@ function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle })
         <div className="flex flex-wrap gap-2">
           {normalizeStatusForCalendar(booking.status) === 'pending' && <button onClick={() => onApprove(booking)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Kinnita</button>}
           <button onClick={() => onCancel(booking)} className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-black text-rose-800 ring-1 ring-rose-100 hover:bg-rose-100">Tühista</button>
+          {seriesId && <button onClick={() => onCancelSeries(seriesId)} className="rounded-xl bg-rose-100 px-4 py-3 text-sm font-black text-rose-900 hover:bg-rose-200">Tühista kogu seeria</button>}
         </div>
       </div>
       {booking.notes && <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-600 ring-1 ring-slate-200">{booking.notes}</p>}
@@ -1763,6 +1767,14 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
       window.alert('Tühistamine ebaõnnestus: broneeringu ID puudub.')
       return
     }
+
+    async function cancelSeries(seriesId) {
+      if (!window.confirm(`Kas tühistada kogu seeria ${seriesId}?`)) return
+      try {
+        await postToAppsScript({ action: 'cancelSeries', seriesId })
+        await refreshData()
+      } catch (error) { window.alert(error.message) }
+    }
     try {
       await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
       updateLocalBooking(id, { status: 'tühistatud' })
@@ -1809,7 +1821,7 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          {visible.length ? visible.map((booking) => <AdminBookingCard key={booking.bookingId || booking.id} booking={booking} onApprove={approve} onCancel={cancel} onUpdatePublicTitle={updatePublicTitle} />) : <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 ring-1 ring-slate-200">Selles vaates ei ole kirjeid.</p>}
+          {visible.length ? visible.map((booking) => <AdminBookingCard key={booking.bookingId || booking.id} booking={booking} onApprove={approve} onCancel={cancel} onCancelSeries={cancelSeries} onUpdatePublicTitle={updatePublicTitle} />) : <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 ring-1 ring-slate-200">Selles vaates ei ole kirjeid.</p>}
         </div>
       </section>
       <button onClick={() => setView('home')} className="mt-5 rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi avalehele</button>
