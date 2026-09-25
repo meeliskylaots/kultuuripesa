@@ -262,7 +262,11 @@ function jsonp(url, params = {}) {
     const callbackName = `kpJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`
     const script = document.createElement('script')
     const search = new URLSearchParams({ ...params, callback: callbackName })
-    const timeout = setTimeout(() => { delete window[callbackName]; script.remove(); reject(new Error('Päring aegus.')) }, 12000)
+    const timeout = setTimeout(() => {
+      delete window[callbackName]
+      script.remove()
+      reject(new Error('Teenuse vastus aegus. Kontrolli ühendust ja Apps Scripti deploy olekut.'))
+    }, 30000)
     window[callbackName] = (data) => {
       clearTimeout(timeout)
       resolve(data)
@@ -306,7 +310,7 @@ async function postToAppsScript(payload) {
       if (!result?.ok) throw new Error(result?.error || 'Salvestamine ebaõnnestus.')
       return result
     } catch (error) {
-      if (error?.message && error.message !== 'Päring aegus.') throw error
+      if (error?.message && !error.message.startsWith('Teenuse vastus aegus.')) throw error
       if (attempt === 7) throw error
     }
   }
@@ -1633,6 +1637,11 @@ function CollectiveManagement({ selfOnly = false }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState('')
+  const activeCollectiveLeaders = (userResult) => (userResult.users || []).filter((user) => {
+    const role = String(user?.role || '').trim().toLowerCase()
+    const active = user?.active === true || ['true', 'jah', 'yes', '1'].includes(String(user?.active || '').trim().toLowerCase())
+    return role === 'collective' && active
+  })
   const [form, setForm] = useState({
     name: '', leaderUserId: '', roomId: rentalRooms[0]?.id || '', weekday: '1',
     startTime: '19:00', endTime: '21:00', scheduleStart: todayISO(), scheduleEnd: todayISO(),
@@ -1646,7 +1655,7 @@ function CollectiveManagement({ selfOnly = false }) {
       if (!collectiveResult?.ok) throw new Error(collectiveResult?.error || 'Kollektiivide laadimine ebaõnnestus.')
       if (!userResult?.ok) throw new Error(userResult?.error || 'Kollektiivijuhtide laadimine ebaõnnestus.')
       setCollectives(collectiveResult.collectives || [])
-      setLeaders((userResult.users || []).filter((user) => user?.role === 'collective' && user.active))
+      setLeaders(activeCollectiveLeaders(userResult))
       if (selfOnly && activeSessionUser?.id) setForm((current) => ({ ...current, leaderUserId: activeSessionUser.id }))
     } catch (loadError) { setError(loadError.message) }
   }
@@ -1749,9 +1758,14 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
   }
 
   async function cancel(booking) {
-    const id = booking.bookingId || booking.id
+    const id = String(booking.bookingId || booking.id || '').trim()
+    if (!id) {
+      window.alert('Tühistamine ebaõnnestus: broneeringu ID puudub.')
+      return
+    }
     try {
       await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      updateLocalBooking(id, { status: 'tühistatud' })
       await refreshData()
     } catch (error) { window.alert(error.message) }
   }
