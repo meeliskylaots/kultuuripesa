@@ -294,8 +294,8 @@ async function postToAppsScript(payload) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
   })
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 350))
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 250))
     try {
       const result = await jsonp(bookingSettings.appsScriptUrl, {
         action: 'operationStatus',
@@ -307,7 +307,7 @@ async function postToAppsScript(payload) {
       return result
     } catch (error) {
       if (error?.message && error.message !== 'Päring aegus.') throw error
-      if (attempt === 11) throw error
+      if (attempt === 7) throw error
     }
   }
   throw new Error('Salvestuse kinnitamine aegus. Kontrolli töölauda enne uuesti saatmist.')
@@ -1502,8 +1502,18 @@ function UserManagement({ role }) {
       setError('Sisesta nimi, e-post ja vähemalt 12 märgiga ajutine parool.')
       return
     }
-    if (form.role === 'collective' && !form.roomId.trim() && !form.allowedRoomIds.trim()) {
-      setError('Kollektiivi juhile määra vähemalt üks lubatud RoomID.')
+    if (form.role === 'collective' && !form.allowedRoomIds.trim()) {
+      setError('Kollektiivi juhile vali vähemalt üks lubatud ruum.')
+      return
+    }
+    const allowedRoomIds = form.allowedRoomIds
+      .split(',')
+      .map((roomId) => roomId.trim())
+      .filter(Boolean)
+    const knownRoomIds = new Set(rentalRooms.map((room) => room.id))
+    const invalidRoomIds = allowedRoomIds.filter((roomId) => !knownRoomIds.has(roomId))
+    if (invalidRoomIds.length > 0) {
+      setError(`Valitud ruumide andmed ei sobi: ${invalidRoomIds.join(', ')}.`)
       return
     }
     setBusy(true)
@@ -1552,8 +1562,29 @@ function UserManagement({ role }) {
         <Field label="Ajutine parool" required><input type="password" minLength={12} autoComplete="new-password" className={inputClass} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
         <Field label="Kollektiiv"><input className={inputClass} value={form.collective} onChange={(e) => setForm({ ...form, collective: e.target.value })} /></Field>
         <Field label="Rahvamaja"><input className={inputClass} value={form.house} onChange={(e) => setForm({ ...form, house: e.target.value })} placeholder="Konguta rahvamaja" /></Field>
-        <Field label="Põhiruum" required={role === 'collective'}><input className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })} placeholder="konguta-saal" /></Field>
-        <Field label="Lubatud RoomID-d" required={role === 'collective'}><input className={inputClass} value={form.allowedRoomIds} onChange={(e) => setForm({ ...form, allowedRoomIds: e.target.value })} placeholder="konguta-saal,rannu-saal" /></Field>
+        <fieldset className="rounded-xl bg-white p-3 ring-1 ring-slate-200 lg:col-span-2">
+          <legend className="px-1 text-xs font-black uppercase tracking-wide text-slate-500">Lubatud ruumid {form.role === 'collective' && <span className="text-rose-600">*</span>}</legend>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {rentalRooms.map((room) => {
+              const selected = form.allowedRoomIds.split(',').map((roomId) => roomId.trim()).includes(room.id)
+              return (
+                <label key={room.id} className="flex cursor-pointer items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm ring-1 ring-slate-200 hover:bg-emerald-50">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => setForm((current) => {
+                      const ids = current.allowedRoomIds.split(',').map((roomId) => roomId.trim()).filter(Boolean)
+                      const nextIds = selected ? ids.filter((roomId) => roomId !== room.id) : [...ids, room.id]
+                      return { ...current, allowedRoomIds: nextIds.join(',') }
+                    })}
+                    className="mt-1"
+                  />
+                  <span><b>{room.house}</b><span className="block text-slate-600">{room.name}</span></span>
+                </label>
+              )
+            })}
+          </div>
+        </fieldset>
         <button disabled={busy} onClick={createUser} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : 'Lisa kasutaja'}</button>
       </div>
       {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</p>}
