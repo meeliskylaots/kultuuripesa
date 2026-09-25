@@ -3,6 +3,8 @@ import {
   bookingSettings,
   filters,
   activeHouses,
+  publicActivities,
+  officialCollectives,
   initialRequests,
   rentalRooms,
   rentalServices,
@@ -1013,8 +1015,14 @@ function BookingStepContact({ sending, form, setForm, onBack, onSubmit, submitMe
   return <div><h2 className="text-2xl font-black">4. Kontakt, tingimused ja saatmine</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field><Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Telefon" required><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Allkirjastamise viis" required><select className={inputClass}><option>Allkirjastan lepingu kohapeal rahvamajas</option><option>Soovin lepingu allkirjastada digitaalselt</option></select></Field></div><details className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><summary className="cursor-pointer font-black">Ruumide kasutamise tingimused, hinnainfo ja isikuandmed</summary><p className="mt-3 text-sm leading-6 text-slate-600">Broneering jõustub pärast rahvamaja kinnitust. Hind on orienteeruv ja kinnitatakse lõplikult pärast ruumi saadavuse ning vajaduste ülevaatamist. Isikuandmeid kasutatakse broneeringu, lepingu ja arve menetlemiseks.</p></details><label className="mt-4 flex items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.accepted} onChange={(e) => setForm({ ...form, accepted: e.target.checked })} className="mt-1" /><span className="text-sm"><b>Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega. <span className="text-rose-600">*</span></b></span></label>{submitMessage && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{submitMessage}</div>}<div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canSubmit} onClick={onSubmit} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Saada broneeringusoov</button></div></div>
 }
 
-function ActivitiesView({ activities }) {
-  return <Page><SectionHeader eyebrow="Ringid ja tegevused" title="Leia endale sobiv tegevus" text="Siit leiad püsivad tegevused ja huviringid. Liitumise või lisainfo saamiseks võta ühendust." /><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{activities.filter(a => a.status === 'published').map((item) => <div key={item.id} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-2 text-sm text-slate-600">{item.house}</p><p className="mt-3 text-sm font-bold text-slate-950">Kellele: {item.audience}</p><p className="mt-1 text-sm text-slate-600">{item.time}</p><button className="mt-5 rounded-xl bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">{item.contact}</button></div>)}</div></Page>
+function ActivitiesView({ collectives }) {
+  return <Page><SectionHeader eyebrow="Ringid ja tegevused" title="Leia endale sobiv tegevus" text="Tutvu Konguta ja Rannu rahvamaja huvitegevusega. Enne kohale tulekut kontrolli aega korraldajalt." />
+    <div className="space-y-8">{activeHouses.map((house) => <section key={house.id} aria-labelledby={`activities-${house.id}`}>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id={`activities-${house.id}`} className="text-2xl font-black">{house.name}</h2>{house.id === 'rannu' && <p className="mt-1 text-sm text-slate-600">Ametlik kava: hooaeg 2026/2027.</p>}</div><a href={house.activitiesUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-800 underline">Kontrolli ametlikku ajakava ↗</a></div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{publicActivities.filter((item) => item.houseId === house.id).map((item) => <article key={`${house.id}-${item.title}`} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-3 font-bold text-slate-800">{item.time}</p><p className="mt-2 text-sm text-slate-600">{item.place}</p><p className="mt-2 text-sm text-slate-600">Juhendaja: {item.leader}</p><a href={`mailto:${house.email}?subject=${encodeURIComponent(item.title)}`} className="mt-4 inline-block rounded-xl bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Küsi lisateavet</a></article>)}</div>
+    </section>)}</div>
+    <section className="mt-10"><h2 className="text-2xl font-black">Kultuurikollektiivid</h2><p className="mt-2 text-sm text-slate-600">Kollektiivide ja juhendajate andmeid saab juhataja või administraator töölaual uuendada.</p><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{collectives.map((item) => <details key={item.id || `${item.house}-${item.name}`} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><summary className="cursor-pointer text-lg font-black">{item.name}</summary><p className="mt-3 text-sm text-slate-600">{item.house}</p>{item.instructor && <p className="mt-2 text-sm"><b>Juhendaja:</b> {item.instructor}</p>}{item.description && <p className="mt-3 text-sm leading-6 text-slate-600">{item.description}</p>}{item.contactEmail && <a href={`mailto:${item.contactEmail}`} className="mt-3 block break-all text-sm font-bold text-emerald-800 underline">{item.contactEmail}</a>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm font-bold text-emerald-800 underline">Ametlik teave ↗</a>}</details>)}</div></section>
+    <p className="mt-8 text-sm text-slate-600">Ajakava on informatiivne. Huvitegevuse kellaajad ei tähenda automaatselt kinnitatud ruumibroneeringuid.</p></Page>
 }
 
 function HousesView() {
@@ -1668,6 +1676,9 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDeta
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState('')
   const [creating, setCreating] = useState(false)
+  const [infoEditing, setInfoEditing] = useState(null)
+  const [publicInfoReady, setPublicInfoReady] = useState(false)
+  const [infoForm, setInfoForm] = useState({ name: '', house: 'Konguta rahvamaja', instructor: '', description: '', contactEmail: '', phone: '', sourceUrl: '', active: true })
   const activeCollectiveLeaders = (userResult) => (userResult.users || []).filter((user) => {
     const role = String(user?.role || '').trim().toLowerCase()
     const active = user?.active === true || ['true', 'jah', 'yes', '1'].includes(String(user?.active || '').trim().toLowerCase())
@@ -1682,6 +1693,8 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDeta
   async function load() {
     try {
       const collectiveResult = await jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectives', session: activeSessionToken })
+      const publicResult = !selfOnly ? await jsonp(bookingSettings.appsScriptUrl, { action: 'listPublicCollectives' }).catch(() => null) : null
+      setPublicInfoReady(Array.isArray(publicResult?.collectives))
       const changeResult = await jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectiveChanges', session: activeSessionToken })
       const userResult = selfOnly ? { ok: true, users: [activeSessionUser] } : await jsonp(bookingSettings.appsScriptUrl, { action: 'listUsers', session: activeSessionToken })
       if (!collectiveResult?.ok) throw new Error(collectiveResult?.error || 'Kollektiivide laadimine ebaõnnestus.')
@@ -1692,6 +1705,33 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDeta
       setLeaders(activeCollectiveLeaders(userResult))
       if (selfOnly && activeSessionUser?.id) setForm((current) => ({ ...current, leaderUserId: activeSessionUser.id }))
     } catch (loadError) { setError(loadError.message) }
+  }
+
+  function editPublicInfo(item) {
+    setInfoEditing(item?.id || 'new')
+    setInfoForm({ name: item?.name || '', house: item?.house || 'Konguta rahvamaja', instructor: item?.instructor || '', description: item?.description || '', contactEmail: item?.contactEmail || '', phone: item?.phone || '', sourceUrl: item?.sourceUrl || '', active: item?.active !== false })
+    setError('')
+  }
+
+  async function savePublicInfo() {
+    if (busy) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      await postToAppsScript({ action: 'saveCollectiveInfo', ...infoForm, ...(infoEditing === 'new' ? {} : { collectiveId: infoEditing }) })
+      setInfoEditing(null)
+      setMessage('Avalikud andmed on salvestatud. Värskenda huvitegevuse vaadet, et neid näha.')
+      await load()
+    } catch (saveError) { setError(saveError.message) } finally { setBusy(false) }
+  }
+
+  async function importOfficialInfo() {
+    if (busy) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const result = await postToAppsScript({ action: 'importCollectiveInfo', collectives: officialCollectives })
+      setMessage(`Lisatud ${result.added || 0} kollektiivi. Juba olemasolevaid ja muudetud andmeid ei kirjutatud üle.`)
+      await load()
+    } catch (importError) { setError(importError.message) } finally { setBusy(false) }
   }
 
   useEffect(() => { load() }, [])
@@ -1734,10 +1774,11 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDeta
 
   async function toggleActive(collective) {
     const leader = leaders.find((user) => user.id === collective.leaderUserId)
-    if (!leader) { setError('Kollektiivi juhti ei leitud aktiivsete kasutajate seast.'); return }
+    if (!leader && collective.leaderUserId) { setError('Kollektiivi juhti ei leitud aktiivsete kasutajate seast.'); return }
     setError('')
     try {
-      await postToAppsScript({
+      if (!collective.leaderUserId) await postToAppsScript({ action: 'saveCollectiveInfo', collectiveId: collective.id, name: collective.name, house: collective.house, instructor: collective.instructor, description: collective.description, contactEmail: collective.contactEmail, phone: collective.phone, sourceUrl: collective.sourceUrl, active: !collective.active })
+      else await postToAppsScript({
         action: 'updateCollective', collectiveId: collective.id, name: collective.name,
         leaderUserId: collective.leaderUserId, roomId: collective.roomId, weekday: collective.weekday,
         startTime: collective.startTime, endTime: collective.endTime, active: !collective.active
@@ -1763,6 +1804,14 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDeta
         </div>
         <div className="flex gap-2">{allowCreate && !selfOnly && !editingId && <button onClick={() => { setCreating(true); setError('') }} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">Lisa kollektiiv</button>}<button onClick={load} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Värskenda</button></div>
       </div>
+      {!selfOnly && <div className="mt-5 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
+        <h3 className="text-lg font-black">Avalik teave kollektiivide ja juhendajate kohta</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-700">Lisa või muuda kollektiivi tutvustust ilma kasutajakontot või proovibroneeringut loomata. Olemasolev proovigraafik jääb alles.</p>
+        {!publicInfoReady && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Avaliku teabe muutmiseks uuenda esmalt Google Apps Scripti kood ja juuruta uus versioon.</p>}
+        <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy || !publicInfoReady} onClick={() => editPublicInfo(null)} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Lisa avalik kollektiiv</button><button type="button" disabled={busy || !publicInfoReady} onClick={importOfficialInfo} className="rounded-xl bg-white px-4 py-2 text-sm font-black ring-1 ring-emerald-200 disabled:opacity-50">Too ametlikud kollektiivid sisse</button></div>
+        {infoEditing && <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 md:grid-cols-2"><Field label="Kollektiivi nimi"><input className={inputClass} value={infoForm.name} onChange={(e) => setInfoForm({ ...infoForm, name: e.target.value })} /></Field><Field label="Rahvamaja"><select className={inputClass} value={infoForm.house} onChange={(e) => setInfoForm({ ...infoForm, house: e.target.value })}><option>Konguta rahvamaja</option><option>Rannu rahvamaja</option></select></Field><Field label="Juhendaja nimi"><input className={inputClass} value={infoForm.instructor} onChange={(e) => setInfoForm({ ...infoForm, instructor: e.target.value })} /></Field><Field label="Kontakt e-post"><input type="email" className={inputClass} value={infoForm.contactEmail} onChange={(e) => setInfoForm({ ...infoForm, contactEmail: e.target.value })} /></Field><Field label="Telefon"><input type="tel" className={inputClass} value={infoForm.phone} onChange={(e) => setInfoForm({ ...infoForm, phone: e.target.value })} /></Field><Field label="Elva Kultuuri allikaleht"><input type="url" className={inputClass} value={infoForm.sourceUrl} onChange={(e) => setInfoForm({ ...infoForm, sourceUrl: e.target.value })} /></Field><Field label="Tutvustus"><textarea className={`${inputClass} min-h-[90px]`} value={infoForm.description} onChange={(e) => setInfoForm({ ...infoForm, description: e.target.value })} /></Field><label className="flex items-center gap-2 self-end text-sm font-bold"><input type="checkbox" checked={infoForm.active} onChange={(e) => setInfoForm({ ...infoForm, active: e.target.checked })} /> Näita avalikult</label><div className="flex gap-2 md:col-span-2"><button disabled={busy} onClick={savePublicInfo} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Salvesta avalik teave</button><button onClick={() => setInfoEditing(null)} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black">Katkesta</button></div></div>}
+        {collectives.length > 0 && <div className="mt-4 grid gap-2 sm:grid-cols-2">{collectives.map((item) => <div key={item.id} className="flex items-center justify-between gap-2 rounded-xl bg-white p-3 text-sm"><span><b>{item.name}</b><span className="block text-slate-600">{item.instructor || 'Juhendaja täpsustamisel'}</span></span><button type="button" disabled={!publicInfoReady} onClick={() => editPublicInfo(item)} className="rounded-lg bg-emerald-50 px-3 py-2 font-bold text-emerald-800 disabled:opacity-50">Muuda avalikku teavet</button></div>)}</div>}
+      </div>}
       {allowCreate && !selfOnly && leaders.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Enne kollektiivi loomist lisa vahekaardil „Kasutajad” kollektiivijuhi konto ja määra talle lubatud ruumid.</p>}
       {((allowCreate && creating) || editingId) && <div id="collective-form" className="mt-4 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-2 lg:grid-cols-4">
         <Field label="Kollektiivi nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
@@ -1798,7 +1847,7 @@ function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDeta
           const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
           return <article key={collective.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{leader?.name || collective.leaderEmail} · {room.house} · {room.name}</p><p className="text-xs font-bold text-slate-500">{day} {collective.startTime}–{collective.endTime} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p>{collective.contactEmail && <p className="mt-1 text-xs text-slate-600">{collective.contactEmail}{collective.phone ? ` · ${collective.phone}` : ''}</p>}</div>
+              <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{collective.instructor || leader?.name || collective.leaderEmail || 'Juhendaja täpsustamisel'} · {collective.house}{collective.roomId ? ` · ${room.name}` : ''}</p><p className="text-xs font-bold text-slate-500">{collective.roomId ? `${day} ${collective.startTime}–${collective.endTime}` : 'Prooviaeg ei ole kalendrisse lisatud'} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p>{collective.contactEmail && <p className="mt-1 text-xs text-slate-600">{collective.contactEmail}{collective.phone ? ` · ${collective.phone}` : ''}</p>}</div>
               <div className="flex gap-2"><button onClick={() => onOpenDetail?.({ ...collective, leaderName: leader?.name })} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Ava kollektiiv →</button>{!selfOnly && <button onClick={() => toggleActive(collective)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button>}</div>
             </div>
           </article>
@@ -1843,7 +1892,7 @@ function CollectiveDetailView({ collective, onBack, onEdit, bookings, onRefresh 
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-xl font-black">Kontakt ja juhendaja</h2>
           <div className="mt-4 space-y-2 text-sm text-slate-700">
-            <p><b>Juht:</b> {collective.leaderName || 'Määramata'}</p>
+            <p><b>Juhendaja:</b> {collective.instructor || collective.leaderName || 'Määramata'}</p>
             <p><b>Juhendaja e-post:</b> {collective.leaderEmail || 'Määramata'}</p>
             <p><b>Kollektiivi e-post:</b> {collective.contactEmail || 'Määramata'}</p>
             {collective.phone && <p><b>Telefon:</b> {collective.phone}</p>}
@@ -1854,8 +1903,8 @@ function CollectiveDetailView({ collective, onBack, onEdit, bookings, onRefresh 
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-xl font-black">Proovigraafik</h2>
           <div className="mt-4 space-y-2 text-sm text-slate-700">
-            <p><b>Koht:</b> {room.house} · {room.name}</p>
-            <p><b>Aeg:</b> {day} {collective.startTime}–{collective.endTime}</p>
+            <p><b>Koht:</b> {collective.roomId ? `${room.house} · ${room.name}` : 'Proovikoht määramata'}</p>
+            <p><b>Aeg:</b> {collective.roomId ? `${day} ${collective.startTime}–${collective.endTime}` : 'Prooviaeg pole kinnitatud'}</p>
             <p><b>Staatus:</b> {collective.active ? 'Aktiivne' : 'Peatatud'}</p>
           </div>
         </section>
@@ -2015,6 +2064,14 @@ export default function App() {
   const [instructorSession, setInstructorSession] = useState(null)
   const [dataStatus, setDataStatus] = useState('Laen ruumikalendrit...')
   const [calendarReady, setCalendarReady] = useState(false)
+  const [publicCollectives, setPublicCollectives] = useState(null)
+
+  async function refreshPublicCollectives() {
+    try {
+      const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'listPublicCollectives' })
+      if (data?.ok && Array.isArray(data.collectives) && (data.initialized || data.collectives.length)) setPublicCollectives(data.collectives)
+    } catch (error) { /* Vanem serveriversioon: kuva allika põhjal koostatud lähteandmeid. */ }
+  }
 
   async function refreshData() {
     setCalendarReady(false)
@@ -2040,7 +2097,10 @@ export default function App() {
 
   useEffect(() => {
     refreshData()
+    refreshPublicCollectives()
   }, [])
+
+  useEffect(() => { if (view === 'activities') refreshPublicCollectives() }, [view])
 
   useEffect(() => {
     if ((view === 'admin' || view === 'instructor' || view === 'collectiveDetail') && activeSessionToken) refreshData()
@@ -2122,7 +2182,7 @@ export default function App() {
       {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} roomDayIndex={roomDayIndex} setView={setView} setBookingDraft={setBookingDraft} />}
       {view === 'booking' && !calendarReady && <Page><p role="alert">Ruumikalender ei ole saadaval. Palun proovi hiljem uuesti või kirjuta rahvamajale.</p></Page>}
       {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} roomDayIndex={roomDayIndex} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
-      {view === 'activities' && <ActivitiesView activities={activities} />}
+      {view === 'activities' && <ActivitiesView collectives={publicCollectives === null ? officialCollectives : publicCollectives} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
       {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} roomDayIndex={roomDayIndex} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} onOpenCollectiveDetail={openCollectiveDetail} editCollective={editCollective} onEditHandled={() => setEditCollective(null)} />}

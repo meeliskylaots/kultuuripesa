@@ -242,6 +242,39 @@ export const houses = [
 
 export const activeHouses = houses.filter((house) => house.active)
 
+// Avalik huviringide teave. Siin toodud kellaajad ei ole ruumibroneeringud.
+// Enne proovide kalendrisse lisamist peab töötaja kinnitama ruumi ja kuupäevad.
+export const publicActivities = [
+  { houseId: 'konguta', title: 'Konguta segakoor', time: 'Esmaspäeval kell 19.00', leader: 'Ragne Lind ja Merilin Seer', place: 'Konguta rahvamaja' },
+  { houseId: 'konguta', title: 'Segarühm Kavalik', time: 'Neljapäeval kell 19.30', leader: 'Kaie Tali', place: 'Konguta rahvamaja' },
+  { houseId: 'konguta', title: 'Ansambel MESI', time: 'Teisipäeval kell 18.30', leader: 'Merilin Seer', place: 'Konguta rahvamaja / kool' },
+  { houseId: 'konguta', title: 'Tantsurühm Pihlakobar', time: 'Kolmapäeval kell 18.00', leader: 'Kaie Tali', place: 'Konguta rahvamaja' },
+  { houseId: 'konguta', title: 'Laste showtants RN Stuudio', time: 'Kolmapäeval kell 12.30', leader: 'Merit Täht', place: 'Konguta kool' },
+  { houseId: 'konguta', title: 'Laste laulustuudio', time: 'E 14.00 · T 13.40 · K 15.30 · N 12.45', leader: 'Merilin Seer', place: 'Konguta rahvamaja / kool' },
+  { houseId: 'rannu', title: 'Laste rahvatants (1.–4. klass)', time: 'Esmaspäeval 13.00–14.00, alates 5. oktoobrist', leader: 'Külli Kornav', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Savikoda lastele ja noortele', time: 'Esmaspäeval 13.00–15.00, alates 5. oktoobrist', leader: 'Liis Laht (OÜ Metsaliisu)', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Savikoda', time: 'Esmaspäeval 16.00–18.00 või 18.00–20.00', leader: 'Liis Laht (OÜ Metsaliisu)', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Jooga', time: 'Esmaspäeval 19.00–20.00', leader: 'Anne Kalvi', place: 'Peeglisaal' },
+  { houseId: 'rannu', title: 'Naisrahvatantsurühm Kati', time: 'Esmaspäeval ja kolmapäeval 18.00–20.00', leader: 'Külli Kornav', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Beebikool', time: 'Teisipäeval 9.30–10.00 (4–7 kuud) või 10.30–11.00 (alates 8 kuust)', leader: 'Irina Radionova', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Segarühm Kolumats', time: 'Teisipäeval ja neljapäeval 19.00–21.00', leader: 'Lea Kurvits', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Pärimusrühm Liisu', time: 'Kolmapäeval 9.30–11.00', leader: 'Küllike Lõhmus ja Margit Aruksaar', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Kabe, male ja mõttemängud', time: 'Reedel 14.00–15.30', leader: 'Anna Lütsepp', place: 'Rannu rahvamaja' },
+  { houseId: 'rannu', title: 'Kokandus', time: 'Reedel 14.00–16.30', leader: 'Elle Männamets', place: 'Rannu noortekeskus' },
+  { houseId: 'rannu', title: 'EELK Rannu koguduse segakoor', time: 'Pühapäeval 16.00–17.30, kaks korda kuus', leader: 'Mart Jaanson', place: 'Rannu noortekeskus' }
+]
+
+// Lähteandmed ühekordseks impordiks; hiljem hallatakse avalikke kirjeid töölaual.
+export const officialCollectives = [
+  { name: 'Konguta segakoor', house: 'Konguta rahvamaja', instructor: 'Merilin Seer ja Ragne Lind', description: 'Konguta segakoor laulab koorimuusikat klassikast jazz-popini.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
+  { name: 'Segarühm Kavalik', house: 'Konguta rahvamaja', instructor: 'Kaie Tali', description: 'Segarühm tantsib eesti ja teiste rahvaste tantse.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
+  { name: 'Tantsurühm Pihlakobar', house: 'Konguta rahvamaja', instructor: 'Kaie Tali', description: 'Memmede rahvatantsurühm.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
+  { name: 'Naisansambel MESI', house: 'Konguta rahvamaja', instructor: 'Merilin Seer', description: 'Naisansambel esitab eriilmelisi laule.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
+  { name: 'Naisrahvatantsurühm Kati', house: 'Rannu rahvamaja', instructor: 'Külli Kornav', description: 'Rannu naisrahvatantsurühm.', sourceUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/' },
+  { name: 'Segarahvatantsu- ja folkloorirühm Kolumats', house: 'Rannu rahvamaja', instructor: 'Lea Kurvits', description: 'Rannu segarahvatantsu- ja folkloorirühm.', sourceUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/' },
+  { name: 'Laulu ja tantsurühm Liisud', house: 'Rannu rahvamaja', instructor: '', description: 'Rannu laulu- ja tantsurühm.', sourceUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/' }
+]
+
 export const rentalRooms = [
   {
     id: 'rannu-saal',
