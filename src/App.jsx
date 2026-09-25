@@ -1758,9 +1758,14 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
   }
 
   async function cancel(booking) {
-    const id = booking.bookingId || booking.id
+    const id = String(booking.bookingId || booking.id || '').trim()
+    if (!id) {
+      window.alert('Tühistamine ebaõnnestus: broneeringu ID puudub.')
+      return
+    }
     try {
       await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      updateLocalBooking(id, { status: 'tühistatud' })
       await refreshData()
     } catch (error) { window.alert(error.message) }
   }

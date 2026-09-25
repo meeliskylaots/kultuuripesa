@@ -975,8 +975,9 @@ function createUsageId_() {
 }
 
 function updateStatus_(payload) {
-  if (!['kinnitatud', 'tühistatud'].includes(payload.status)) throw new Error('Staatus ei sobi.')
-  const bookingId = payload.bookingId || payload.id
+  const nextStatus = String(payload.status || '').trim().toLowerCase()
+  if (!['kinnitatud', 'tühistatud'].includes(nextStatus)) throw new Error('Staatus ei sobi.')
+  const bookingId = String(payload.bookingId || payload.id || '').trim()
   if (!bookingId) throw new Error('Broneeringu ID puudub.')
 
   const sheet = getOrCreateSheet_()
@@ -987,9 +988,9 @@ function updateStatus_(payload) {
   if (idCol === undefined) throw new Error('Broneeringu ID veerg puudub.')
 
   for (let i = 1; i < values.length; i += 1) {
-    if (String(values[i][idCol]) === String(bookingId)) {
+    if (String(values[i][idCol] || '').trim() === bookingId) {
       const rowNumber = i + 1
-      if (payload.status === 'kinnitatud') {
+      if (nextStatus === 'kinnitatud') {
         const booking = sheetRowToBooking_(rowToObject_(headers, values[i]), rowNumber)
         if (booking.status === 'tühistatud') throw new Error('Tühistatud kirjet ei saa uuesti kinnitada. Loo uus soov.')
         validateRoomTime_(booking)
@@ -997,11 +998,11 @@ function updateStatus_(payload) {
         setCell_(sheet, map, rowNumber, 'Ruum kinni alates', booking.reservedStartTime)
         setCell_(sheet, map, rowNumber, 'Ruum kinni kuni', booking.reservedEndTime)
       }
-      setCell_(sheet, map, rowNumber, 'Staatus', payload.status || 'ootel')
+      setCell_(sheet, map, rowNumber, 'Staatus', nextStatus)
       if (payload.publicTitle !== undefined) setCell_(sheet, map, rowNumber, 'Avaliku kalendri tekst', payload.publicTitle)
       if (payload.displayMode !== undefined) setCell_(sheet, map, rowNumber, 'Kuvamise viis', payload.displayMode)
 
-      if (payload.status === 'kinnitatud') {
+      if (nextStatus === 'kinnitatud') {
         setCell_(sheet, map, rowNumber, 'Kinnitamise aeg', new Date())
         const rowObj = rowToObject_(headers, sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0])
         const alreadySent = String(rowObj['Kinnituskiri saadetud'] || '').toLowerCase() === 'jah'
@@ -1011,7 +1012,7 @@ function updateStatus_(payload) {
         }
       }
 
-      return { ok: true, bookingId, status: payload.status || 'ootel' }
+      return { ok: true, bookingId, status: nextStatus }
     }
   }
 
