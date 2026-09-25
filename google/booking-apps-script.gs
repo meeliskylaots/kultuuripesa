@@ -55,6 +55,7 @@ const HEADERS = [
   'Tüüp',
   'Staatus',
   'Kollektiiv',
+  'Kollektiivi ID',
   'Juhendaja ID',
   'Rahvamaja',
   'Ruum',
@@ -608,11 +609,10 @@ function weeklyDates_(startISO, endISO, weekday) {
 }
 
 function createCollective_(payload) {
-  const actor = requireManager_(payload.sessionToken)
+  requireManager_(payload.sessionToken)
   const validated = validateCollectivePayload_(payload)
-  if (actor.role === 'collective' && validated.leader.id !== actor.id) {
-    throw new Error('Kollektiivijuht saab luua ainult enda kollektiivi.')
-  }
+  const existingNames = collectiveRows_().values.slice(1).map((row) => String(row[1] || '').trim().toLowerCase())
+  if (existingNames.includes(validated.name.toLowerCase())) throw new Error('Selle nimega kollektiiv on juba olemas.')
   const room = ROOM_CONFIG[validated.roomId]
   const dates = weeklyDates_(payload.scheduleStart, payload.scheduleEnd, validated.weekday)
   if (dates.length === 0) throw new Error('Valitud perioodis ei ole proovipäeva.')
@@ -641,6 +641,7 @@ function createCollective_(payload) {
   }[header] || '')))
   dates.forEach((date) => createUsage_({
     action: 'createUsage', sessionToken: payload.sessionToken, roomId: validated.roomId, date, seriesId,
+    collectiveId: id,
     startTime: validated.startTime, endTime: validated.endTime, collectiveLeaderId: validated.leader.id,
     collective: validated.name, publicTitle: validated.name, type: 'Proov',
     house: room.house, roomName: room.name, displayMode: 'category',
@@ -962,11 +963,13 @@ function createUsage_(payload) {
   const actor = requireSession_(payload.sessionToken)
   if (actor.role === 'collective') {
     if (!actor.allowedRoomIds.includes(String(payload.roomId || ''))) throw new Error('Selle ruumi kasutamiseks puudub õigus.')
+    const own = listCollectives_(payload.sessionToken).collectives.find((item) => item.id === String(payload.collectiveId || '') && item.active)
+    if (!own) throw new Error('Vali oma aktiivne kollektiiv. Kollektiivi loob juhataja või administraator.')
     payload.instructorId = actor.id
     payload.status = 'ootel'
     payload.name = actor.name
     payload.email = actor.email
-    payload.collective = payload.__rescheduleTarget ? payload.collective : (payload.collective || actor.collective)
+    payload.collective = own.name
   } else if (['director', 'admin'].includes(actor.role)) {
     payload.instructorId = actor.id
     payload.status = payload.status === 'kinnitatud' ? 'kinnitatud' : 'ootel'
@@ -999,6 +1002,7 @@ function createUsage_(payload) {
     'Tüüp': payload.type || 'juhendaja sisestus',
     'Staatus': payload.status || 'ootel',
     'Kollektiiv': payload.collective || '',
+    'Kollektiivi ID': payload.collectiveId || '',
     'Juhendaja ID': payload.instructorId || '',
     'Rahvamaja': payload.house || '',
     'Ruum': payload.roomName || '',
@@ -1121,6 +1125,8 @@ function requestReschedule_(payload) {
     throw new Error('Muuta saab ainult tulevast aktiivset proovi.')
   }
   if (actor.role === 'collective' && old.instructorId !== actor.id) throw new Error('See proov ei kuulu sinu kollektiivile.')
+  const collectiveId = old.collectiveId || listCollectives_(payload.sessionToken).collectives.find((item) => item.leaderUserId === old.instructorId && item.name === old.collective)?.id || ''
+  if (!collectiveId) throw new Error('Proov ei ole seotud olemasoleva kollektiiviga.')
   if (rows.some(({ row }) => String(row['Asendab broneeringut']) === id && String(row['Staatus']).toLowerCase() === 'ootel')) {
     throw new Error('Selle proovi muudatus juba ootab kinnitamist.')
   }
@@ -1133,7 +1139,7 @@ function requestReschedule_(payload) {
     roomId, house: room.house, roomName: room.name,
     date: String(payload.date || ''), startTime: String(payload.startTime || ''), endTime: String(payload.endTime || ''),
     type: 'Prooviaja muudatus', publicTitle: old.publicTitle || old.collective || 'Proov',
-    displayMode: old.displayMode || 'category', collective: old.collective,
+    displayMode: old.displayMode || 'category', collective: old.collective, collectiveId,
     collectiveLeaderId: old.instructorId, notes: 'Asendab proovi ' + id,
     __rescheduleTarget: id
   }
@@ -1206,6 +1212,7 @@ function sheetRowToBooking_(row, rowNumber) {
     type: row['Tüüp'] || 'broneering',
     status,
     collective: row['Kollektiiv'] || '',
+    collectiveId: row['Kollektiivi ID'] || '',
     instructorId: row['Juhendaja ID'] || '',
     house: row['Rahvamaja'] || '',
     roomName: row['Ruum'] || '',
