@@ -240,37 +240,45 @@ export const houses = [
 
 export const activeHouses = houses.filter((house) => house.active)
 
-// Avalik huviringide teave. Siin toodud kellaajad ei ole ruumibroneeringud.
-// Enne proovide kalendrisse lisamist peab töötaja kinnitama ruumi ja kuupäevad.
+// Avalik huviringide teave (kuvatakse sündmuste aegu rakenduse "Ringid" vahelehel)
 export const publicActivities = [
-  { houseId: 'konguta', collectiveName: 'Konguta segakoor', title: 'Konguta segakoor', time: 'Esmaspäeval kell 19.00', leader: 'Ragne Lind ja Merilin Seer', place: 'Konguta rahvamaja' },
-  { houseId: 'konguta', collectiveName: 'Segarühm Kavalik', title: 'Segarühm Kavalik', time: 'Neljapäeval kell 19.30', leader: 'Kaie Tali', place: 'Konguta rahvamaja' },
-  { houseId: 'konguta', collectiveName: 'Naisansambel MESI', title: 'Ansambel MESI', time: 'Teisipäeval kell 18.30', leader: 'Merilin Seer', place: 'Konguta rahvamaja / kool' },
-  { houseId: 'konguta', collectiveName: 'Tantsurühm Pihlakobar', title: 'Tantsurühm Pihlakobar', time: 'Kolmapäeval kell 18.00', leader: 'Kaie Tali', place: 'Konguta rahvamaja' },
-  { houseId: 'konguta', title: 'Laste showtants RN Stuudio', time: 'Kolmapäeval kell 12.30', leader: 'Merit Täht', place: 'Konguta kool' },
-  { houseId: 'konguta', title: 'Laste laulustuudio', time: 'E 14.00 · T 13.40 · K 15.30 · N 12.45', leader: 'Merilin Seer', place: 'Konguta rahvamaja / kool' },
-  { houseId: 'rannu', title: 'Laste rahvatants (1.–4. klass)', time: 'Esmaspäeval 13.00–14.00, alates 5. oktoobrist', leader: 'Külli Kornav', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Savikoda lastele ja noortele', time: 'Esmaspäeval 13.00–15.00, alates 5. oktoobrist', leader: 'Liis Laht (OÜ Metsaliisu)', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Savikoda', time: 'Esmaspäeval 16.00–18.00 või 18.00–20.00', leader: 'Liis Laht (OÜ Metsaliisu)', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Jooga', time: 'Esmaspäeval 19.00–20.00', leader: 'Anne Kalvi', place: 'Peeglisaal' },
-  { houseId: 'rannu', collectiveName: 'Naisrahvatantsurühm Kati', title: 'Naisrahvatantsurühm Kati', time: 'Esmaspäeval ja kolmapäeval 18.00–20.00', leader: 'Külli Kornav', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Beebikool', time: 'Teisipäeval 9.30–10.00 (4–7 kuud) või 10.30–11.00 (alates 8 kuust)', leader: 'Irina Radionova', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', collectiveName: 'Segarahvatantsu- ja folkloorirühm Kolumats', title: 'Segarühm Kolumats', time: 'Teisipäeval ja neljapäeval 19.00–21.00', leader: 'Lea Kurvits', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Pärimusrühm Liisu', time: 'Kolmapäeval 9.30–11.00', leader: 'Küllike Lõhmus ja Margit Aruksaar', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Kabe, male ja mõttemängud', time: 'Reedel 14.00–15.30', leader: 'Anna Lütsepp', place: 'Rannu rahvamaja' },
-  { houseId: 'rannu', title: 'Kokandus', time: 'Reedel 14.00–16.30', leader: 'Elle Männamets', place: 'Rannu noortekeskus' },
-  { houseId: 'rannu', title: 'EELK Rannu koguduse segakoor', time: 'Pühapäeval 16.00–17.30, kaks korda kuus', leader: 'Mart Jaanson', place: 'Rannu noortekeskus' }
+  // Konguta tegevused
+  { houseId: 'konguta', title: 'Konguta segakoor', collectiveName: 'Konguta segakoor', time: 'esmaspäev kell 19.00', place: 'Konguta rahvamaja', leader: 'Ragne Lind ja Merilin Seer' },
+  { houseId: 'konguta', title: 'Segarühm Kavalik', collectiveName: 'Segarühm Kavalik', time: 'neljapäev kell 19.30', place: 'Konguta rahvamaja', leader: 'Kaie Tali' },
+  { houseId: 'konguta', title: 'Ansambel MESI', collectiveName: 'Ansambel MESI', time: 'teisipäev kell 18.30', place: 'Konguta rahvamaja / kool', leader: 'Merilin Seer' },
+  { houseId: 'konguta', title: 'Memmede tantsurühm Pihlakobar', collectiveName: 'Memmede tantsurühm Pihlakobar', time: 'kolmapäev kell 18.00', place: 'Konguta rahvamaja', leader: 'Kaie Tali' },
+  { houseId: 'konguta', title: 'Laste showtants RN Stuudio', collectiveName: 'Laste showtants RN Stuudio', time: 'kolmapäev kell 12.30', place: 'Konguta kool', leader: 'Merit Täht' },
+  { houseId: 'konguta', title: 'Laste laulustuudio', collectiveName: 'Laste laulustuudio', time: 'E 14.00, T 13.40, K 15.30, N 12.45', place: 'Konguta rahvamaja / kool', leader: 'Merilin Seer' },
+  // Rannu tegevused
+  { houseId: 'rannu', title: 'Rahvatants lastele 1.-4. klass', collectiveName: 'Rahvatants lastele 1.-4. klass', time: 'esmaspäev 13.00–14.00', place: 'Rannu rahvamaja', leader: 'Külli Kornav' },
+  { houseId: 'rannu', title: 'Savikoda lastele ja noortele', collectiveName: '', time: 'esmaspäev 13.00–15.00', place: 'Rannu rahvamaja', leader: 'Liis Laht (OÜ Metsaliisu)' },
+  { houseId: 'rannu', title: 'Savikoda täiskasvanutele', collectiveName: '', time: 'esmaspäev 16.00–18.00 ja 18.00–20.00', place: 'Rannu rahvamaja', leader: 'Liis Laht (OÜ Metsaliisu)' },
+  { houseId: 'rannu', title: 'Jooga', collectiveName: '', time: 'esmaspäev 19.00–20.00', place: 'Rannu rahvamaja peeglisaal', leader: 'Anne Kalvi' },
+  { houseId: 'rannu', title: 'Naisrahvatantsurühm Kati', collectiveName: 'Naisrahvatantsurühm Kati', time: 'esmaspäev ja kolmapäev 18.00–20.00', place: 'Rannu rahvamaja', leader: 'Külli Kornav' },
+  { houseId: 'rannu', title: 'Beebikool 4–7 kuud', collectiveName: '', time: 'teisipäev 09.30–10.00', place: 'Rannu rahvamaja', leader: 'Irina Radionova' },
+  { houseId: 'rannu', title: 'Beebikool 8+ kuud', collectiveName: '', time: 'teisipäev 10.30–11.00', place: 'Rannu rahvamaja', leader: 'Irina Radionova' },
+  { houseId: 'rannu', title: 'Segarühm Kolumats', collectiveName: 'Segarühm Kolumats', time: 'teisipäev ja neljapäev 19.00–21.00', place: 'Rannu rahvamaja', leader: 'Lea Kurvits' },
+  { houseId: 'rannu', title: 'Pärimusrühm Liisu', collectiveName: 'Pärimusrühm Liisu', time: 'kolmapäev 09.30–11.00', place: 'Rannu rahvamaja', leader: 'Küllike Lõhmus ja Margit Aruksaar' },
+  { houseId: 'rannu', title: 'Kabe, male ja muud mõttemängud', collectiveName: '', time: 'reede 14.00–15.30', place: 'Rannu rahvamaja', leader: 'Anna Lütsepp' },
+  { houseId: 'rannu', title: 'Kokandus', collectiveName: '', time: 'reede 14.00–16.30', place: 'Rannu Noortekeskus', leader: 'Elle Männamets' },
+  { houseId: 'rannu', title: 'EELK Rannu koguduse segakoor', collectiveName: 'EELK Rannu koguduse segakoor', time: 'pühapäev 16.00–17.30 (2 korda kuus)', place: 'Rannu Noortekeskus', leader: 'Mart Jaanson' }
 ]
 
 // Lähteandmed ühekordseks impordiks; hiljem hallatakse avalikke kirjeid töölaual.
 export const officialCollectives = [
-  { name: 'Konguta segakoor', house: 'Konguta rahvamaja', instructor: 'Merilin Seer ja Ragne Lind', description: 'Konguta segakoor laulab koorimuusikat klassikast jazz-popini.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
-  { name: 'Segarühm Kavalik', house: 'Konguta rahvamaja', instructor: 'Kaie Tali', description: 'Segarühm tantsib eesti ja teiste rahvaste tantse.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
-  { name: 'Tantsurühm Pihlakobar', house: 'Konguta rahvamaja', instructor: 'Kaie Tali', description: 'Memmede rahvatantsurühm.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
-  { name: 'Naisansambel MESI', house: 'Konguta rahvamaja', instructor: 'Merilin Seer', description: 'Naisansambel esitab eriilmelisi laule.', sourceUrl: 'https://elvakultuur.ee/konguta-rahvamaja/kultuurikollektiivid/' },
-  { name: 'Naisrahvatantsurühm Kati', house: 'Rannu rahvamaja', instructor: 'Külli Kornav', description: 'Rannu naisrahvatantsurühm.', sourceUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/' },
-  { name: 'Segarahvatantsu- ja folkloorirühm Kolumats', house: 'Rannu rahvamaja', instructor: 'Lea Kurvits', description: 'Rannu segarahvatantsu- ja folkloorirühm.', sourceUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/' },
-  { name: 'Laulu ja tantsurühm Liisud', house: 'Rannu rahvamaja', instructor: '', description: 'Rannu laulu- ja tantsurühm.', sourceUrl: 'https://elvakultuur.ee/rannu-rahvamaja/kultuurikollektiivid/' }
+  // Konguta kollektiivid
+  { name: 'Konguta segakoor', house: 'Konguta rahvamaja', instructor: 'Ragne Lind ja Merilin Seer', contactEmail: 'merilin.seer@gmail.com', phone: '5611 1218', description: '', sourceUrl: '' },
+  { name: 'Segarühm Kavalik', house: 'Konguta rahvamaja', instructor: 'Kaie Tali', contactEmail: 'kaietali02@gmail.com', phone: '5341 7212', description: '', sourceUrl: '' },
+  { name: 'Ansambel MESI', house: 'Konguta rahvamaja', instructor: 'Merilin Seer', contactEmail: 'merilin.seer@gmail.com', phone: '5611 1218', description: '', sourceUrl: '' },
+  { name: 'Memmede tantsurühm Pihlakobar', house: 'Konguta rahvamaja', instructor: 'Kaie Tali', contactEmail: 'kaietali02@gmail.com', phone: '5341 7212', description: '', sourceUrl: '' },
+  { name: 'Laste showtants RN Stuudio', house: 'Konguta rahvamaja', instructor: 'Merit Täht', contactEmail: 'rnstudio@gmail.com', phone: '552 5177', description: '', sourceUrl: '' },
+  { name: 'Laste laulustuudio', house: 'Konguta rahvamaja', instructor: 'Merilin Seer', contactEmail: 'merilin.seer@gmail.com', phone: '5611 1218', description: '', sourceUrl: '' },
+  // Rannu kollektiivid
+  { name: 'Rahvatants lastele 1.-4. klass', house: 'Rannu rahvamaja', instructor: 'Külli Kornav', contactEmail: '', phone: '', description: '', sourceUrl: '' },
+  { name: 'Naisrahvatantsurühm Kati', house: 'Rannu rahvamaja', instructor: 'Külli Kornav', contactEmail: '', phone: '', description: '', sourceUrl: '' },
+  { name: 'Segarühm Kolumats', house: 'Rannu rahvamaja', instructor: 'Lea Kurvits', contactEmail: '', phone: '', description: '', sourceUrl: '' },
+  { name: 'Pärimusrühm Liisu', house: 'Rannu rahvamaja', instructor: 'Küllike Lõhmus ja Margit Aruksaar', contactEmail: '', phone: '', description: '', sourceUrl: '' },
+  { name: 'EELK Rannu koguduse segakoor', house: 'Rannu rahvamaja', instructor: 'Mart Jaanson', contactEmail: '', phone: '', description: '', sourceUrl: '' }
 ]
 
 export const rentalRooms = [
