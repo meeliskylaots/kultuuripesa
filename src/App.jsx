@@ -1480,6 +1480,8 @@ function UserManagement({ role }) {
   const [message, setMessage] = useState('')
   const [resetFor, setResetFor] = useState(null)
   const [resetPassword, setResetPassword] = useState('')
+  const [profileFor, setProfileFor] = useState(null)
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', collective: '', house: '', phone: '', website: '', socialMedia: '', allowedRoomIds: '' })
   const [form, setForm] = useState({
     name: '', email: '', role: role === 'director' ? 'admin' : 'collective',
     password: '', collective: '', house: '', roomId: '', allowedRoomIds: '',
@@ -1551,6 +1553,18 @@ function UserManagement({ role }) {
     } catch (passwordError) { setError(passwordError.message) } finally { setBusy(false) }
   }
 
+  async function saveProfile(user) {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await postToAppsScript({ action: 'manageUser', userAction: 'updateProfile', userId: user.id, ...profileForm, roomId: profileForm.allowedRoomIds.split(',')[0] || '' })
+      setProfileFor(null)
+      setMessage(`${user.name} andmed on uuendatud.`)
+      await loadUsers()
+    } catch (profileError) { setError(profileError.message) } finally { setBusy(false) }
+  }
+
   return (
     <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1600,8 +1614,10 @@ function UserManagement({ role }) {
             <div><p className="font-black">{user.name}</p><p className="text-sm text-slate-600">{user.email} · {user.role}</p><p className="text-xs font-bold text-slate-500">{user.active ? 'Aktiivne' : 'Suletud'}{user.collective ? ' · ' + user.collective : ''}</p></div>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => setActive(user, !user.active)} disabled={user.id === activeSessionUser?.id} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50">{user.active ? 'Sulge ligipääs' : 'Ava ligipääs'}</button>
+              <button onClick={() => { setProfileFor(user.id); setProfileForm({ name: user.name || '', email: user.email || '', collective: user.collective || '', house: user.house || '', phone: user.phone || '', website: user.website || '', socialMedia: user.socialMedia || '', allowedRoomIds: (user.allowedRoomIds || []).join(',') }); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda andmeid</button>
               <button onClick={() => { setResetFor(user.id); setResetPassword(''); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda parooli</button>
             </div>
+            {profileFor === user.id && <div className="mt-3 grid gap-2 rounded-xl bg-white p-3 ring-1 ring-slate-200 md:grid-cols-2"><Field label="Nimi"><input className={inputClass} value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} /></Field><Field label="E-post"><input type="email" className={inputClass} value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} /></Field><Field label="Kollektiiv"><input className={inputClass} value={profileForm.collective} onChange={(e) => setProfileForm({ ...profileForm, collective: e.target.value })} /></Field><Field label="Rahvamaja"><input className={inputClass} value={profileForm.house} onChange={(e) => setProfileForm({ ...profileForm, house: e.target.value })} /></Field><Field label="Telefon"><input className={inputClass} value={profileForm.phone} onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} /></Field><Field label="Koduleht"><input className={inputClass} value={profileForm.website} onChange={(e) => setProfileForm({ ...profileForm, website: e.target.value })} /></Field><Field label="Sotsiaalmeedia"><input className={inputClass} value={profileForm.socialMedia} onChange={(e) => setProfileForm({ ...profileForm, socialMedia: e.target.value })} /></Field><div className="flex items-end gap-2"><button disabled={busy} onClick={() => saveProfile(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta</button><button onClick={() => setProfileFor(null)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">Katkesta</button></div></div>}
           </div>
           {resetFor === user.id && <div className="mt-3 flex flex-wrap gap-2"><input type="password" minLength={12} autoComplete="new-password" className={cx(inputClass, 'max-w-sm')} placeholder="Uus vähemalt 12 märgiga parool" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><button disabled={busy} onClick={() => changePassword(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta uus parool</button><button onClick={() => setResetFor(null)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Katkesta</button></div>}
         </article>)}
