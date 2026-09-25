@@ -1318,6 +1318,7 @@ function InstructorView({ events, activities, roomDayIndex, onUsageCreated, init
           </div>
         </section>
       </div>
+      <CollectiveManagement selfOnly />
     </Page>
   )
 }
@@ -1479,9 +1480,12 @@ function UserManagement({ role }) {
   const [message, setMessage] = useState('')
   const [resetFor, setResetFor] = useState(null)
   const [resetPassword, setResetPassword] = useState('')
+  const [profileFor, setProfileFor] = useState(null)
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', collective: '', house: '', phone: '', website: '', socialMedia: '', allowedRoomIds: '' })
   const [form, setForm] = useState({
     name: '', email: '', role: role === 'director' ? 'admin' : 'collective',
-    password: '', collective: '', house: '', roomId: '', allowedRoomIds: ''
+    password: '', collective: '', house: '', roomId: '', allowedRoomIds: '',
+    phone: '', website: '', socialMedia: ''
   })
 
   async function loadUsers() {
@@ -1520,7 +1524,7 @@ function UserManagement({ role }) {
     try {
       const passwordData = await passwordPayload(form.password)
       await postToAppsScript({ action: 'createUser', ...form, ...passwordData })
-      setForm({ name: '', email: '', role: role === 'director' ? 'admin' : 'collective', password: '', collective: '', house: '', roomId: '', allowedRoomIds: '' })
+      setForm({ name: '', email: '', role: role === 'director' ? 'admin' : 'collective', password: '', collective: '', house: '', roomId: '', allowedRoomIds: '', phone: '', website: '', socialMedia: '' })
       setMessage('Kasutaja on loodud. Anna talle e-post ja ajutine parool turvalise kanali kaudu.')
       await loadUsers()
     } catch (createError) { setError(createError.message) } finally { setBusy(false) }
@@ -1549,6 +1553,18 @@ function UserManagement({ role }) {
     } catch (passwordError) { setError(passwordError.message) } finally { setBusy(false) }
   }
 
+  async function saveProfile(user) {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await postToAppsScript({ action: 'manageUser', userAction: 'updateProfile', userId: user.id, ...profileForm, roomId: profileForm.allowedRoomIds.split(',')[0] || '' })
+      setProfileFor(null)
+      setMessage(`${user.name} andmed on uuendatud.`)
+      await loadUsers()
+    } catch (profileError) { setError(profileError.message) } finally { setBusy(false) }
+  }
+
   return (
     <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1562,6 +1578,9 @@ function UserManagement({ role }) {
         <Field label="Ajutine parool" required><input type="password" minLength={12} autoComplete="new-password" className={inputClass} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
         <Field label="Kollektiiv"><input className={inputClass} value={form.collective} onChange={(e) => setForm({ ...form, collective: e.target.value })} /></Field>
         <Field label="Rahvamaja"><input className={inputClass} value={form.house} onChange={(e) => setForm({ ...form, house: e.target.value })} placeholder="Konguta rahvamaja" /></Field>
+        <Field label="Telefon"><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+372 ..." /></Field>
+        <Field label="Koduleht"><input type="url" className={inputClass} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://..." /></Field>
+        <Field label="Sotsiaalmeedia"><input className={inputClass} value={form.socialMedia} onChange={(e) => setForm({ ...form, socialMedia: e.target.value })} placeholder="Facebook või Instagram" /></Field>
         <fieldset className="rounded-xl bg-white p-3 ring-1 ring-slate-200 lg:col-span-2">
           <legend className="px-1 text-xs font-black uppercase tracking-wide text-slate-500">Lubatud ruumid {form.role === 'collective' && <span className="text-rose-600">*</span>}</legend>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1595,8 +1614,10 @@ function UserManagement({ role }) {
             <div><p className="font-black">{user.name}</p><p className="text-sm text-slate-600">{user.email} · {user.role}</p><p className="text-xs font-bold text-slate-500">{user.active ? 'Aktiivne' : 'Suletud'}{user.collective ? ' · ' + user.collective : ''}</p></div>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => setActive(user, !user.active)} disabled={user.id === activeSessionUser?.id} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50">{user.active ? 'Sulge ligipääs' : 'Ava ligipääs'}</button>
+              <button onClick={() => { setProfileFor(user.id); setProfileForm({ name: user.name || '', email: user.email || '', collective: user.collective || '', house: user.house || '', phone: user.phone || '', website: user.website || '', socialMedia: user.socialMedia || '', allowedRoomIds: (user.allowedRoomIds || []).join(',') }); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda andmeid</button>
               <button onClick={() => { setResetFor(user.id); setResetPassword(''); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda parooli</button>
             </div>
+            {profileFor === user.id && <div className="mt-3 grid gap-2 rounded-xl bg-white p-3 ring-1 ring-slate-200 md:grid-cols-2"><Field label="Nimi"><input className={inputClass} value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} /></Field><Field label="E-post"><input type="email" className={inputClass} value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} /></Field><Field label="Kollektiiv"><input className={inputClass} value={profileForm.collective} onChange={(e) => setProfileForm({ ...profileForm, collective: e.target.value })} /></Field><Field label="Rahvamaja"><input className={inputClass} value={profileForm.house} onChange={(e) => setProfileForm({ ...profileForm, house: e.target.value })} /></Field><Field label="Telefon"><input className={inputClass} value={profileForm.phone} onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} /></Field><Field label="Koduleht"><input className={inputClass} value={profileForm.website} onChange={(e) => setProfileForm({ ...profileForm, website: e.target.value })} /></Field><Field label="Sotsiaalmeedia"><input className={inputClass} value={profileForm.socialMedia} onChange={(e) => setProfileForm({ ...profileForm, socialMedia: e.target.value })} /></Field><div className="flex items-end gap-2"><button disabled={busy} onClick={() => saveProfile(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta</button><button onClick={() => setProfileFor(null)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">Katkesta</button></div></div>}
           </div>
           {resetFor === user.id && <div className="mt-3 flex flex-wrap gap-2"><input type="password" minLength={12} autoComplete="new-password" className={cx(inputClass, 'max-w-sm')} placeholder="Uus vähemalt 12 märgiga parool" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><button disabled={busy} onClick={() => changePassword(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta uus parool</button><button onClick={() => setResetFor(null)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Katkesta</button></div>}
         </article>)}
@@ -1605,27 +1626,28 @@ function UserManagement({ role }) {
   )
 }
 
-function CollectiveManagement() {
+function CollectiveManagement({ selfOnly = false }) {
   const [collectives, setCollectives] = useState([])
   const [leaders, setLeaders] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [editingId, setEditingId] = useState('')
   const [form, setForm] = useState({
     name: '', leaderUserId: '', roomId: rentalRooms[0]?.id || '', weekday: '1',
-    startTime: '19:00', endTime: '21:00', scheduleStart: todayISO(), scheduleEnd: todayISO()
+    startTime: '19:00', endTime: '21:00', scheduleStart: todayISO(), scheduleEnd: todayISO(),
+    contactEmail: '', phone: '', website: '', socialMedia: '', description: ''
   })
 
   async function load() {
     try {
-      const [collectiveResult, userResult] = await Promise.all([
-        jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectives', session: activeSessionToken }),
-        jsonp(bookingSettings.appsScriptUrl, { action: 'listUsers', session: activeSessionToken })
-      ])
+      const collectiveResult = await jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectives', session: activeSessionToken })
+      const userResult = selfOnly ? { ok: true, users: [activeSessionUser] } : await jsonp(bookingSettings.appsScriptUrl, { action: 'listUsers', session: activeSessionToken })
       if (!collectiveResult?.ok) throw new Error(collectiveResult?.error || 'Kollektiivide laadimine ebaõnnestus.')
       if (!userResult?.ok) throw new Error(userResult?.error || 'Kollektiivijuhtide laadimine ebaõnnestus.')
       setCollectives(collectiveResult.collectives || [])
-      setLeaders((userResult.users || []).filter((user) => user.role === 'collective' && user.active))
+      setLeaders((userResult.users || []).filter((user) => user?.role === 'collective' && user.active))
+      if (selfOnly && activeSessionUser?.id) setForm((current) => ({ ...current, leaderUserId: activeSessionUser.id }))
     } catch (loadError) { setError(loadError.message) }
   }
 
@@ -1641,9 +1663,10 @@ function CollectiveManagement() {
     }
     setBusy(true)
     try {
-      await postToAppsScript({ action: 'createCollective', ...form })
-      setMessage('Kollektiiv ja korduv proovigraafik on loodud.')
-      setForm((current) => ({ ...current, name: '', leaderUserId: '', scheduleStart: todayISO(), scheduleEnd: todayISO() }))
+      await postToAppsScript({ action: editingId ? 'updateCollective' : 'createCollective', ...(editingId ? { collectiveId: editingId } : {}), ...form })
+      setMessage(editingId ? 'Kollektiivi andmed on uuendatud.' : 'Kollektiiv ja korduv proovigraafik on loodud.')
+      setEditingId('')
+      setForm((current) => ({ ...current, name: '', leaderUserId: selfOnly ? activeSessionUser?.id || '' : '', scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: '', phone: '', website: '', socialMedia: '', description: '' }))
       await load()
     } catch (createError) { setError(createError.message) } finally { setBusy(false) }
   }
@@ -1665,19 +1688,26 @@ function CollectiveManagement() {
   return (
     <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className="text-xl font-black">Kollektiivide haldus</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Lisa kollektiiv, seo see olemasoleva kollektiivijuhiga ja loo korduvad proovid. Konfliktid kontrollitakse serveris enne salvestamist.</p></div>
+        <div><h2 className="text-xl font-black">Kollektiivide haldus</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Lisa kollektiiv, seo see olemasoleva kollektiivijuhiga ja loo korduvad proovid. Konfliktid kontrollitakse serveris enne salvestamist.</p>
+        </div>
         <button onClick={load} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Värskenda</button>
       </div>
       <div className="mt-4 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-2 lg:grid-cols-4">
         <Field label="Kollektiivi nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label="Kollektiivijuht" required><select className={inputClass} value={form.leaderUserId} onChange={(e) => setForm({ ...form, leaderUserId: e.target.value })}><option value="">Vali juht</option>{leaders.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}</select></Field>
+        {!selfOnly && <Field label="Kollektiivijuht" required><select className={inputClass} value={form.leaderUserId} onChange={(e) => setForm({ ...form, leaderUserId: e.target.value })}><option value="">Vali juht</option>{leaders.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}</select></Field>}
         <Field label="Rahvamaja ja ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field>
         <Field label="Proovipäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
         <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
         <Field label="Lõpp" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field>
         <Field label="Graafiku algus" required><input type="date" min={todayISO()} className={inputClass} value={form.scheduleStart} onChange={(e) => setForm({ ...form, scheduleStart: e.target.value })} /></Field>
         <Field label="Graafiku lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.scheduleEnd} onChange={(e) => setForm({ ...form, scheduleEnd: e.target.value })} /></Field>
-        <button disabled={busy} onClick={createCollective} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : 'Lisa kollektiiv ja proovid'}</button>
+        <Field label="Kollektiivi e-post"><input type="email" className={inputClass} value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} placeholder="kontakt@kollektiiv.ee" /></Field>
+        <Field label="Telefon"><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+372 ..." /></Field>
+        <Field label="Koduleht"><input type="url" className={inputClass} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://..." /></Field>
+        <Field label="Sotsiaalmeedia"><input className={inputClass} value={form.socialMedia} onChange={(e) => setForm({ ...form, socialMedia: e.target.value })} placeholder="Facebook või Instagram" /></Field>
+        <Field label="Kirjeldus"><textarea className={`${inputClass} min-h-[90px]`} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Lühike avalik tutvustus" /></Field>
+        <button disabled={busy} onClick={createCollective} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : editingId ? 'Salvesta muudatused' : 'Lisa kollektiiv ja proovid'}</button>
+        {editingId && <button type="button" onClick={() => { setEditingId(''); setForm((current) => ({ ...current, name: '', scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: '', phone: '', website: '', socialMedia: '', description: '' })) }} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black lg:col-span-4">Katkesta muutmine</button>}
       </div>
       {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</p>}
       {message && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900">{message}</p>}
@@ -1688,8 +1718,8 @@ function CollectiveManagement() {
           const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
           return <article key={collective.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{leader?.name || collective.leaderEmail} · {room.house} · {room.name}</p><p className="text-xs font-bold text-slate-500">{day} {collective.startTime}–{collective.endTime} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p></div>
-              <button onClick={() => toggleActive(collective)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button>
+              <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{leader?.name || collective.leaderEmail} · {room.house} · {room.name}</p><p className="text-xs font-bold text-slate-500">{day} {collective.startTime}–{collective.endTime} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p>{collective.contactEmail && <p className="mt-1 text-xs text-slate-600">{collective.contactEmail}{collective.phone ? ` · ${collective.phone}` : ''}</p>}</div>
+              <div className="flex gap-2"><button onClick={() => { setEditingId(collective.id); setForm({ name: collective.name, leaderUserId: collective.leaderUserId, roomId: collective.roomId, weekday: collective.weekday, startTime: collective.startTime, endTime: collective.endTime, scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: collective.contactEmail || '', phone: collective.phone || '', website: collective.website || '', socialMedia: collective.socialMedia || '', description: collective.description || '' }) }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda</button><button onClick={() => toggleActive(collective)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button></div>
             </div>
           </article>
         })}

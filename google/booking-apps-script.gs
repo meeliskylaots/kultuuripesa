@@ -89,7 +89,7 @@ const HEADERS = [
 const USER_SHEET_NAME = 'Kasutajad'
 const USER_HEADERS = [
   'Kasutaja ID', 'Nimi', 'E-post', 'Roll', 'Parooli sool', 'Parooli tuletis',
-  'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Aktiivne',
+  'Kollektiiv', 'Rahvamaja', 'Ruum', 'RoomID', 'Lubatud RoomID-d', 'Telefon', 'Koduleht', 'Sotsiaalmeedia', 'Aktiivne',
   'Loodud', 'Viimane sisselogimine', 'Ebaõnnestunud katsed', 'Blokeeritud kuni',
   'Parooli muutmise aeg'
 ]
@@ -102,7 +102,7 @@ const LOCKOUT_SECONDS = 15 * 60
 const COLLECTIVE_SHEET_NAME = 'Kollektiivid'
 const COLLECTIVE_HEADERS = [
   'Kollektiivi ID', 'Nimi', 'Juhi kasutaja ID', 'Juhi e-post',
-  'Rahvamaja', 'Ruum', 'Proovipäev', 'Algus', 'Lõpp', 'Aktiivne'
+  'Rahvamaja', 'Ruum', 'Proovipäev', 'Algus', 'Lõpp', 'Kontakt e-post', 'Telefon', 'Koduleht', 'Sotsiaalmeedia', 'Kirjeldus', 'Aktiivne'
 ]
 
 function normalizeEmail_(value) {
@@ -196,6 +196,9 @@ function userFromRow_(headers, row, rowNumber) {
     house: String(row[map['Rahvamaja']] || ''),
     room: String(row[map['Ruum']] || ''),
     roomId: String(row[map['RoomID']] || ''),
+    phone: String(row[map['Telefon']] || ''),
+    website: String(row[map['Koduleht']] || ''),
+    socialMedia: String(row[map['Sotsiaalmeedia']] || ''),
     allowedRoomIds: String(row[map['Lubatud RoomID-d']] || row[map['RoomID']] || '').split(',').map((item) => item.trim()).filter(Boolean),
     active,
     createdAt: row[map['Loodud']] || '',
@@ -211,6 +214,7 @@ function publicUser_(user) {
     id: user.id, name: user.name, email: user.email, role: user.role,
     collective: user.collective, house: user.house, room: user.room,
     roomId: user.roomId, allowedRoomIds: user.allowedRoomIds, active: user.active,
+    phone: user.phone, website: user.website, socialMedia: user.socialMedia,
     lastLoginAt: user.lastLoginAt, passwordChangedAt: user.passwordChangedAt
   }
 }
@@ -274,6 +278,12 @@ function requireSession_(token) {
 function requireManager_(token) {
   const user = requireSession_(token)
   if (!['director', 'admin'].includes(user.role)) throw new Error('Selle toimingu jaoks puudub õigus.')
+  return user
+}
+
+function requireCollectiveEditor_(token) {
+  const user = requireSession_(token)
+  if (!['director', 'admin', 'collective'].includes(user.role)) throw new Error('Selle toimingu jaoks puudub õigus.')
   return user
 }
 
@@ -387,6 +397,9 @@ function appendUser_(payload, forcedRole) {
   values['Ruum'] = payload.room || ''
   values['RoomID'] = payload.roomId || ''
   values['Lubatud RoomID-d'] = allowedRoomIds.join(',')
+  values['Telefon'] = payload.phone || ''
+  values['Koduleht'] = payload.website || ''
+  values['Sotsiaalmeedia'] = payload.socialMedia || ''
   values['Aktiivne'] = 'jah'
   values['Loodud'] = new Date()
   values['Viimane sisselogimine'] = ''
@@ -472,18 +485,26 @@ function collectiveFromRow_(headers, row, rowNumber) {
     weekday: String(row[map['Proovipäev']] || ''),
     startTime: String(row[map['Algus']] || ''),
     endTime: String(row[map['Lõpp']] || ''),
+    contactEmail: normalizeEmail_(row[map['Kontakt e-post']]),
+    phone: String(row[map['Telefon']] || ''),
+    website: String(row[map['Koduleht']] || ''),
+    socialMedia: String(row[map['Sotsiaalmeedia']] || ''),
+    description: String(row[map['Kirjeldus']] || ''),
     active: !['ei', 'false', '0', 'no'].includes(activeValue)
   }
 }
 
 function listCollectives_(token) {
-  requireManager_(token)
+  const actor = requireCollectiveEditor_(token)
   const { headers, values } = collectiveRows_()
+  const all = values.slice(1)
+    .map((row, index) => collectiveFromRow_(headers, row, index + 2))
+    .filter((collective) => collective.id)
   return {
     ok: true,
-    collectives: values.slice(1)
-      .map((row, index) => collectiveFromRow_(headers, row, index + 2))
-      .filter((collective) => collective.id)
+    collectives: actor.role === 'collective'
+      ? all.filter((collective) => collective.leaderUserId === actor.id)
+      : all
   }
 }
 
@@ -504,7 +525,16 @@ function validateCollectivePayload_(payload, existingId) {
     const idCol = headerMap_(headers)['Kollektiivi ID']
     if (!values.slice(1).some((row) => String(row[idCol]) === String(existingId))) throw new Error('Kollektiivi ei leitud.')
   }
-  return { name, leader, weekday: String(weekday), roomId: String(payload.roomId), startTime: String(payload.startTime), endTime: String(payload.endTime) }
+  const contactEmail = normalizeEmail_(payload.contactEmail || '')
+  if (contactEmail && !isValidEmail_(contactEmail)) throw new Error('Kollektiivi kontakt e-post ei sobi.')
+  return {
+    name, leader, weekday: String(weekday), roomId: String(payload.roomId),
+    startTime: String(payload.startTime), endTime: String(payload.endTime),
+    contactEmail, phone: String(payload.phone || '').trim(),
+    website: String(payload.website || '').trim(),
+    socialMedia: String(payload.socialMedia || '').trim(),
+    description: String(payload.description || '').trim()
+  }
 }
 
 function weeklyDates_(startISO, endISO, weekday) {
@@ -522,8 +552,11 @@ function weeklyDates_(startISO, endISO, weekday) {
 }
 
 function createCollective_(payload) {
-  const actor = requireManager_(payload.sessionToken)
+  const actor = requireCollectiveEditor_(payload.sessionToken)
   const validated = validateCollectivePayload_(payload)
+  if (actor.role === 'collective' && validated.leader.id !== actor.id) {
+    throw new Error('Kollektiivijuht saab luua ainult enda kollektiivi.')
+  }
   const room = ROOM_CONFIG[validated.roomId]
   const dates = weeklyDates_(payload.scheduleStart, payload.scheduleEnd, validated.weekday)
   if (dates.length === 0) throw new Error('Valitud perioodis ei ole proovipäeva.')
@@ -544,7 +577,10 @@ function createCollective_(payload) {
   sheet.appendRow(headers.map((header) => safeCell_({
     'Kollektiivi ID': id, 'Nimi': validated.name, 'Juhi kasutaja ID': validated.leader.id,
     'Juhi e-post': validated.leader.email, 'Rahvamaja': room.house, 'Ruum': validated.roomId,
-    'Proovipäev': validated.weekday, 'Algus': validated.startTime, 'Lõpp': validated.endTime, 'Aktiivne': 'jah'
+    'Proovipäev': validated.weekday, 'Algus': validated.startTime, 'Lõpp': validated.endTime,
+    'Kontakt e-post': validated.contactEmail, 'Telefon': validated.phone,
+    'Koduleht': validated.website, 'Sotsiaalmeedia': validated.socialMedia,
+    'Kirjeldus': validated.description, 'Aktiivne': 'jah'
   }[header] || '')))
   dates.forEach((date) => createUsage_({
     action: 'createUsage', sessionToken: payload.sessionToken, roomId: validated.roomId, date,
@@ -557,17 +593,23 @@ function createCollective_(payload) {
 }
 
 function updateCollective_(payload) {
-  requireManager_(payload.sessionToken)
+  const actor = requireCollectiveEditor_(payload.sessionToken)
   const validated = validateCollectivePayload_(payload, payload.collectiveId)
   const { sheet, headers, map, values } = collectiveRows_()
   const idCol = map['Kollektiivi ID']
   const index = values.findIndex((row, rowIndex) => rowIndex > 0 && String(row[idCol]) === String(payload.collectiveId))
   if (index < 1) throw new Error('Kollektiivi ei leitud.')
+  const existing = collectiveFromRow_(headers, values[index], index + 1)
+  if (actor.role === 'collective' && existing.leaderUserId !== actor.id) {
+    throw new Error('Sul puudub selle kollektiivi muutmise õigus.')
+  }
   const row = index + 1
   const changes = {
     'Nimi': validated.name, 'Juhi kasutaja ID': validated.leader.id, 'Juhi e-post': validated.leader.email,
     'Rahvamaja': ROOM_CONFIG[validated.roomId].house, 'Ruum': validated.roomId,
     'Proovipäev': validated.weekday, 'Algus': validated.startTime, 'Lõpp': validated.endTime,
+    'Kontakt e-post': validated.contactEmail, 'Telefon': validated.phone,
+    'Koduleht': validated.website, 'Sotsiaalmeedia': validated.socialMedia, 'Kirjeldus': validated.description,
     'Aktiivne': payload.active === false ? 'ei' : 'jah'
   }
   Object.keys(changes).forEach((header) => setCell_(sheet, map, row, header, changes[header]))
@@ -628,6 +670,9 @@ function manageUser_(payload) {
       'Rahvamaja': payload.house || '',
       'Ruum': payload.room || '',
       'RoomID': payload.roomId || '',
+      'Telefon': payload.phone || target.phone || '',
+      'Koduleht': payload.website || target.website || '',
+      'Sotsiaalmeedia': payload.socialMedia || target.socialMedia || '',
       'Lubatud RoomID-d': allowedRoomIds.join(',')
     })
     return { ok: true, user: publicUser_(findUserById_(target.id)) }
