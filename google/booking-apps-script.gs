@@ -79,6 +79,7 @@ const HEADERS = [
   'Teenused kokku',
   'Orienteeruv koguhind',
   'Lisainfo',
+  'Seeria ID',
   'Märkus hinna kohta',
   'Avaliku kalendri tekst',
   'Kuvamise viis',
@@ -560,10 +561,11 @@ function createCollective_(payload) {
   const room = ROOM_CONFIG[validated.roomId]
   const dates = weeklyDates_(payload.scheduleStart, payload.scheduleEnd, validated.weekday)
   if (dates.length === 0) throw new Error('Valitud perioodis ei ole proovipäeva.')
+  const seriesId = 'SEERIA-' + Date.now() + '-' + Math.floor(Math.random() * 900 + 100)
   dates.forEach((date) => {
     const usage = {
       roomId: validated.roomId, date, startTime: validated.startTime, endTime: validated.endTime,
-      sessionToken: payload.sessionToken, collectiveLeaderId: validated.leader.id,
+      sessionToken: payload.sessionToken, collectiveLeaderId: validated.leader.id, seriesId,
       collective: validated.name, publicTitle: validated.name, type: 'Proov',
       house: room.house, roomName: room.name, displayMode: 'category',
       suppressStaffEmail: true, notes: 'Kollektiivi korduv proov: ' + validated.name
@@ -583,7 +585,7 @@ function createCollective_(payload) {
     'Kirjeldus': validated.description, 'Aktiivne': 'jah'
   }[header] || '')))
   dates.forEach((date) => createUsage_({
-    action: 'createUsage', sessionToken: payload.sessionToken, roomId: validated.roomId, date,
+    action: 'createUsage', sessionToken: payload.sessionToken, roomId: validated.roomId, date, seriesId,
     startTime: validated.startTime, endTime: validated.endTime, collectiveLeaderId: validated.leader.id,
     collective: validated.name, publicTitle: validated.name, type: 'Proov',
     house: room.house, roomName: room.name, displayMode: 'category',
@@ -747,6 +749,8 @@ function doPost(e) {
     if (payload.action === 'updateStatus') {
       requireManager_(payload.sessionToken)
       result = updateStatus_(payload)
+    } else if (payload.action === 'cancelSeries') {
+      result = cancelSeries_(payload)
     } else if (payload.action === 'createUsage') {
       result = createUsage_(payload)
     } else if (payload.action === 'createUser') {
@@ -866,6 +870,7 @@ function createBooking_(payload) {
     'Teenused kokku': Number(payload.servicesTotal || 0),
     'Orienteeruv koguhind': Number(payload.estimatedTotal || 0),
     'Lisainfo': payload.notes || '',
+    'Seeria ID': payload.seriesId || '',
     'Märkus hinna kohta': payload.disclaimer || '',
     'Avaliku kalendri tekst': payload.publicTitle || (payload.publicEvent ? (payload.eventType || 'Avalik sündmus') : 'Ruum broneeritud'),
     'Kuvamise viis': payload.displayMode || (payload.publicEvent ? 'full' : 'neutral'),
@@ -947,6 +952,7 @@ function createUsage_(payload) {
     'Teenused kokku': '',
     'Orienteeruv koguhind': '',
     'Lisainfo': payload.notes || '',
+    'Seeria ID': payload.seriesId || '',
     'Märkus hinna kohta': payload.disclaimer || '',
     'Avaliku kalendri tekst': payload.publicTitle || 'Ringitegevus',
     'Kuvamise viis': payload.displayMode || 'category',
@@ -998,6 +1004,7 @@ function updateStatus_(payload) {
         setCell_(sheet, map, rowNumber, 'Ruum kinni alates', booking.reservedStartTime)
         setCell_(sheet, map, rowNumber, 'Ruum kinni kuni', booking.reservedEndTime)
       }
+
       setCell_(sheet, map, rowNumber, 'Staatus', nextStatus)
       if (payload.publicTitle !== undefined) setCell_(sheet, map, rowNumber, 'Avaliku kalendri tekst', payload.publicTitle)
       if (payload.displayMode !== undefined) setCell_(sheet, map, rowNumber, 'Kuvamise viis', payload.displayMode)
@@ -1017,6 +1024,32 @@ function updateStatus_(payload) {
   }
 
   throw new Error('Broneeringut ei leitud: ' + bookingId)
+}
+
+function cancelSeries_(payload) {
+  requireManager_(payload.sessionToken)
+  const seriesId = String(payload.seriesId || '').trim()
+  if (!seriesId) throw new Error('Seeria ID puudub.')
+  const sheet = getOrCreateSheet_()
+  const headers = ensureHeader_(sheet)
+  const map = headerMap_(headers)
+  const values = sheet.getDataRange().getValues()
+  const statusCol = map['Staatus']
+  const seriesCol = map['Seeria ID']
+  const notesCol = map['Lisainfo']
+  if (statusCol === undefined) throw new Error('Staatus veerg puudub.')
+  let updated = 0
+  for (let i = 1; i < values.length; i += 1) {
+    const storedSeriesId = seriesCol === undefined ? '' : String(values[i][seriesCol] || '').trim()
+    const notes = notesCol === undefined ? '' : String(values[i][notesCol] || '')
+    if (storedSeriesId !== seriesId && !notes.includes(`Seeria ID: ${seriesId}`)) continue
+    const currentStatus = String(values[i][statusCol] || '').trim().toLowerCase()
+    if (currentStatus === 'tühistatud' || currentStatus === 'cancelled') continue
+    setCell_(sheet, map, i + 1, 'Staatus', 'tühistatud')
+    updated += 1
+  }
+  if (!updated) throw new Error('Aktiivseid selle seeria kirjeid ei leitud.')
+  return { ok: true, seriesId, updated }
 }
 
 function listBookings_(sessionToken) {
@@ -1079,6 +1112,7 @@ function sheetRowToBooking_(row, rowNumber) {
     servicesTotal: row['Teenused kokku'] || 0,
     estimatedTotal: row['Orienteeruv koguhind'] || 0,
     notes: row['Lisainfo'] || '',
+    seriesId: row['Seeria ID'] || '',
     disclaimer: row['Märkus hinna kohta'] || '',
     publicTitle: row['Avaliku kalendri tekst'] || (useText.includes('avalik') ? (row['Sündmuse liik'] || 'Avalik sündmus') : 'Ruum broneeritud'),
     calendarText: row['Avaliku kalendri tekst'] || '',
