@@ -2,11 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   bookingSettings,
   filters,
-  houses,
-  initialActivities,
-  initialEvents,
+  activeHouses,
   initialRequests,
-  instructors,
   rentalRooms,
   rentalServices,
   roles
@@ -75,6 +72,67 @@ function recurrenceSummary(form) {
 }
 
 
+const todayISO = () => { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const value = Object.fromEntries(parts.map(part => [part.type, part.value])); return `${value.year}-${value.month}-${value.day}` }
+let activeSessionToken = ''
+let activeSessionUser = null
+
+function bytesToBase64(bytes) {
+  let binary = ''
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+  return btoa(binary)
+}
+
+function base64ToBytes(value) {
+  const binary = atob(String(value || ''))
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+}
+
+function randomBase64(byteCount = 16) {
+  const bytes = new Uint8Array(byteCount)
+  crypto.getRandomValues(bytes)
+  return bytesToBase64(bytes)
+}
+
+async function derivePasswordVerifier(password, salt, iterations) {
+  const material = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(String(password)),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  )
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: base64ToBytes(salt), iterations: Number(iterations), hash: 'SHA-256' },
+    material,
+    256
+  )
+  return bytesToBase64(new Uint8Array(bits))
+}
+
+async function proofForVerifier(verifier, nonce) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(verifier) + '|' + String(nonce)))
+  return bytesToBase64(new Uint8Array(digest))
+}
+
+async function passwordPayload(password) {
+  const salt = randomBase64(16)
+  const verifier = await derivePasswordVerifier(password, salt, 150000)
+  return { passwordSalt: salt, passwordVerifier: verifier }
+}
+
+async function authenticateWithPassword(email, password) {
+  const challenge = await jsonp(bookingSettings.appsScriptUrl, { action: 'authChallenge', email })
+  if (!challenge?.ok) throw new Error(challenge?.error || 'Sisselogimine ebaõnnestus.')
+  const verifier = await derivePasswordVerifier(password, challenge.salt, challenge.iterations)
+  const proof = await proofForVerifier(verifier, challenge.nonce)
+  return jsonp(bookingSettings.appsScriptUrl, {
+    action: 'authLogin',
+    email,
+    challengeId: challenge.challengeId,
+    proof
+  })
+}
+
 function cx(...classes) {
   return classes.filter(Boolean).join(' ')
 }
@@ -106,12 +164,12 @@ function isoDate(year, monthIndex, day) {
 }
 
 function monthLabel(dateISO) {
-  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date('2026-06-01T12:00:00')
+  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date(`${todayISO().slice(0, 7)}-01T12:00:00`)
   return base.toLocaleDateString('et-EE', { month: 'long', year: 'numeric' })
 }
 
 function shiftMonth(dateISO, amount) {
-  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date('2026-06-01T12:00:00')
+  const base = dateISO ? new Date(`${dateISO.slice(0, 7)}-01T12:00:00`) : new Date(`${todayISO().slice(0, 7)}-01T12:00:00`)
   base.setMonth(base.getMonth() + amount)
   return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-01`
 }
@@ -152,7 +210,7 @@ function roomIdFromHouseAndRoom(house, roomName) {
   })
   if (found) return found.id
   const loose = rentalRooms.find((room) => room.house === house && room.name === roomName)
-  return loose?.id || rentalRooms[0].id
+  return loose?.id || ''
 }
 
 function normalizeStatusForCalendar(status) {
@@ -165,7 +223,8 @@ function normalizeStatusForCalendar(status) {
 
 function bookingToCalendarEvent(item) {
   const roomId = item.roomId || roomIdFromHouseAndRoom(item.house, item.roomName || item.room)
-  const room = getRoomById(roomId)
+  const room = rentalRooms.find((candidate) => candidate.id === roomId)
+  if (!room) return null
   const normalizedStatus = normalizeStatusForCalendar(item.status)
   const publicTitle = item.publicTitle || item.calendarText || (normalizedStatus === 'pending' ? 'Broneeritud' : (item.publicEvent ? (item.eventType || 'Avalik sündmus') : 'Ruum broneeritud'))
   return {
@@ -199,16 +258,19 @@ function bookingToCalendarEvent(item) {
 
 function jsonp(url, params = {}) {
   return new Promise((resolve, reject) => {
-    if (!url) return resolve({ ok: false, usages: [], pending: [] })
+    if (!url) return reject(new Error('Teenuse aadress puudub.'))
     const callbackName = `kpJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`
     const script = document.createElement('script')
     const search = new URLSearchParams({ ...params, callback: callbackName })
+    const timeout = setTimeout(() => { delete window[callbackName]; script.remove(); reject(new Error('Päring aegus.')) }, 12000)
     window[callbackName] = (data) => {
+      clearTimeout(timeout)
       resolve(data)
       delete window[callbackName]
       script.remove()
     }
     script.onerror = () => {
+      clearTimeout(timeout)
       reject(new Error('Andmete laadimine ebaõnnestus.'))
       delete window[callbackName]
       script.remove()
@@ -219,15 +281,36 @@ function jsonp(url, params = {}) {
 }
 
 async function postToAppsScript(payload) {
-  if (!bookingSettings.appsScriptUrl) return
+  if (!bookingSettings.appsScriptUrl) throw new Error('Teenuse aadress puudub.')
+  const requestId = payload.requestId || 'OP-' + randomBase64(18)
+  const body = {
+    ...payload,
+    requestId,
+    ...(activeSessionToken && !payload.sessionToken ? { sessionToken: activeSessionToken } : {})
+  }
   await fetch(bookingSettings.appsScriptUrl, {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   })
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 350))
+    try {
+      const result = await jsonp(bookingSettings.appsScriptUrl, {
+        action: 'operationStatus',
+        requestId,
+        ...(body.sessionToken ? { session: body.sessionToken } : {})
+      })
+      if (result?.pending) continue
+      if (!result?.ok) throw new Error(result?.error || 'Salvestamine ebaõnnestus.')
+      return result
+    } catch (error) {
+      if (attempt === 11) throw error
+    }
+  }
+  throw new Error('Salvestuse kinnitamine aegus. Kontrolli töölauda enne uuesti saatmist.')
 }
-
 function getBlockingItems(events, activities) {
   const eventItems = events
     .filter((item) => item.blocksRoom && ['published', 'kinnitatud', 'pending', 'ootel'].includes(normalizeStatusForCalendar(item.status)))
@@ -272,7 +355,7 @@ function getAvailability(roomId, dateISO, startTime, endTime, events, activities
     return { status: 'missing', items, conflicts: [], requestedStart, requestedEnd, reservedStart, reservedEnd }
   }
 
-  if (requestedEnd <= requestedStart) {
+  if (dateISO < todayISO() || requestedEnd <= requestedStart) {
     return { status: 'invalid', items, conflicts: [], requestedStart, requestedEnd, reservedStart, reservedEnd }
   }
 
@@ -328,9 +411,9 @@ function Header({ view, setView }) {
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
         <button onClick={() => setView('home')} className="flex items-center gap-3 text-left">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-700 text-lg font-black text-white">RK</div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-700 text-lg font-black text-white">KP</div>
           <div>
-            <p className="font-black leading-tight text-slate-950">Rannu & Konguta</p>
+            <p className="font-black leading-tight text-slate-950">Kultuuripesa</p>
             <p className="text-xs font-semibold text-slate-500">rahvamajad</p>
           </div>
         </button>
@@ -402,8 +485,8 @@ function HomeView({ setView, events, openEventDetails }) {
     <Page>
       <section className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
         <div>
-          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Rannu ja Konguta kultuurielu ühest kohast</p>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Rannu ja Konguta kultuurielu ühest kohast.</h1>
+          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Kohalik kultuurielu ühest kohast</p>
+          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Kohalik kultuurielu ühest kohast.</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vaata sündmusi, broneeri rahvamaja ruume ja leia üles kohalikud ringid, kollektiivid ning kogukonnategevused.</p>
         </div>
         <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -566,7 +649,7 @@ function RoomCard({ room, onOpen }) {
 }
 
 function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities }) {
-  const current = selectedDate || '2026-06-01'
+  const current = selectedDate || todayISO()
   const base = new Date(`${current.slice(0, 7)}-01T12:00:00`)
   const year = base.getFullYear()
   const month = base.getMonth()
@@ -614,7 +697,7 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
 }
 
 function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, setView, setBookingDraft }) {
-  const [selectedDate, setSelectedDate] = useState('2026-06-20')
+  const [selectedDate, setSelectedDate] = useState(todayISO())
   const [startTime, setStartTime] = useState('18:00')
   const [endTime, setEndTime] = useState('22:00')
   const room = getRoomById(selectedRoomId)
@@ -633,7 +716,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
         <div>
           <div className="mb-4 flex flex-wrap gap-2">
             {rentalRooms.map((item) => (
-              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate('2026-06-20') }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
+              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate(todayISO()) }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
             ))}
           </div>
           <SectionHeader eyebrow={room.house} title={room.name} text={room.description} compact />
@@ -666,7 +749,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
             <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} /></div>
             {availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on esialgu vaba. Ruum hoitakse puhvrit arvestades kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}
             {availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Seda aega ei saa valida.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}
-            {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Lõpuaeg peab olema algusajast hilisem.</div>}
+            {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}
             <button disabled={!canContinue} onClick={continueBooking} className="mt-5 w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka broneeringuga</button>
           </div>
         </aside>
@@ -729,7 +812,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   const [step, setStep] = useState(initialDraft ? 2 : 1)
   const [form, setForm] = useState({
     roomId: initialDraft?.roomId || rentalRooms[0].id,
-    date: initialDraft?.date || '2026-06-20',
+    date: initialDraft?.date || todayISO(),
     startTime: initialDraft?.startTime || '18:00',
     endTime: initialDraft?.endTime || '22:00',
     eventType: '',
@@ -743,6 +826,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
     accepted: false
   })
   const [submitMessage, setSubmitMessage] = useState('')
+  const [sending, setSending] = useState(false)
   const room = getRoomById(form.roomId)
   const availability = getAvailability(form.roomId, form.date, form.startTime, form.endTime, events, activities)
   const requestedHours = Math.max(0, (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60)
@@ -758,6 +842,9 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   }
 
   async function submitBooking() {
+    if (sending) return
+    setSending(true)
+    setSubmitMessage('Saadan broneeringusoovi, palun oota…')
     const clientBookingId = `BR-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`
     const payload = {
       action: 'createBooking',
@@ -800,7 +887,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
         onBookingCreated?.({ ...payload, id: clientBookingId, bookingId: clientBookingId, status: 'ootel', calendarText: payload.publicTitle })
         setSubmitMessage('Broneeringusoov saadeti. See on avalikus kalendris märgitud kui “ootab kinnitamist” ja töötaja vaates ootel.')
       } catch (error) {
-        setSubmitMessage('Saatmine ei õnnestunud. Palun proovi uuesti või võta rahvamajaga ühendust.')
+        setSubmitMessage(error.message)
       }
     } else {
       const subject = encodeURIComponent('Ruumi kasutamise soov')
@@ -808,6 +895,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
       window.location.href = `mailto:${bookingSettings.defaultEmail}?subject=${subject}&body=${body}`
       setSubmitMessage('Avati e-kirja mustand, sest Apps Scripti URL puudub.')
     }
+    setSending(false)
   }
 
   return (
@@ -838,7 +926,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
           {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
           {step === 2 && <BookingStepEvent form={form} setForm={setForm} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
           {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
-          {step === 4 && <BookingStepContact form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
+          {step === 4 && <BookingStepContact sending={sending} form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
         </section>
       </div>
     </Page>
@@ -851,7 +939,7 @@ function Field({ label, required, children }) {
 const inputClass = 'w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500'
 
 function BookingStepRoom({ form, setForm, availability, room, events, activities, onNext, canNext }) {
-  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
+  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
 }
 
 function BookingStepEvent({ form, setForm, onBack, onNext }) {
@@ -883,8 +971,8 @@ function BookingStepServices({ form, room, toggleService, onBack, onNext }) {
   )
 }
 
-function BookingStepContact({ form, setForm, onBack, onSubmit, submitMessage }) {
-  const canSubmit = form.name && form.email && form.phone && form.accepted
+function BookingStepContact({ sending, form, setForm, onBack, onSubmit, submitMessage }) {
+  const canSubmit = !sending && form.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) && form.phone.trim() && form.accepted
   return <div><h2 className="text-2xl font-black">4. Kontakt, tingimused ja saatmine</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field><Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Telefon" required><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Allkirjastamise viis" required><select className={inputClass}><option>Allkirjastan lepingu kohapeal rahvamajas</option><option>Soovin lepingu allkirjastada digitaalselt</option></select></Field></div><details className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><summary className="cursor-pointer font-black">Ruumide kasutamise tingimused, hinnainfo ja isikuandmed</summary><p className="mt-3 text-sm leading-6 text-slate-600">Broneering jõustub pärast rahvamaja kinnitust. Hind on orienteeruv ja kinnitatakse lõplikult pärast ruumi saadavuse ning vajaduste ülevaatamist. Isikuandmeid kasutatakse broneeringu, lepingu ja arve menetlemiseks.</p></details><label className="mt-4 flex items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.accepted} onChange={(e) => setForm({ ...form, accepted: e.target.checked })} className="mt-1" /><span className="text-sm"><b>Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega. <span className="text-rose-600">*</span></b></span></label>{submitMessage && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{submitMessage}</div>}<div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canSubmit} onClick={onSubmit} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Saada broneeringusoov</button></div></div>
 }
 
@@ -893,103 +981,142 @@ function ActivitiesView({ activities }) {
 }
 
 function HousesView() {
-  return <Page><SectionHeader eyebrow="Rahvamajad" title="Kaks maja, kaks kohalikku nägu" text="Siia saab hiljem lisada päris fotod rahvamajadest ja ruumidest. Praegu on pildialad fotode kohahoidjad." /><div className="grid gap-5 md:grid-cols-2">{houses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><div className="mb-5 flex h-52 items-center justify-center rounded-[1.3rem] bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Lisa siia päris foto</div><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></Page>
+  return <Page><SectionHeader eyebrow="Rahvamajad" title="Rahvamajad" text="Leia oma kodukandi rahvamaja ning tutvu selle tegevuste ja ruumidega." /><div className="grid gap-5 md:grid-cols-2">{activeHouses.map((house) => <article key={house.name} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div></article>)}</div></Page>
 }
 
 function ContactView() {
-  return <Page><SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta või helista, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." /><div className="grid gap-5 md:grid-cols-3">{['Üldkontakt', 'Rannu rahvamaja', 'Konguta rahvamaja'].map((title, index) => <div key={title} className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{title}</h3><p className="mt-3 text-slate-600">{index === 0 ? 'kultuur@elva.ee' : index === 1 ? 'Rannu alevik' : 'Annikoru küla'}</p><p className="mt-1 text-slate-600">+372 0000 0000</p><div className="mt-5 flex flex-wrap gap-2"><a href="tel:+37200000000" className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white">Helista</a><a href="mailto:kultuur@elva.ee" className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-800">Kirjuta</a></div></div>)}</div></Page>
-}
-
-function LoginView({ setView, selectedRole, setSelectedRole, adminPin, setAdminPin, isAdminUnlocked, setIsAdminUnlocked, setInstructorSession }) {
-  const [error, setError] = useState('')
-  const [instructorPin, setInstructorPin] = useState('')
-  const isInstructorRole = selectedRole === 'collective'
-
-  function enterAdmin() {
-    if (adminPin === bookingSettings.adminPin) {
-      setIsAdminUnlocked(true)
-      setError('')
-      setView('admin')
-    } else {
-      setError('PIN-kood ei sobi.')
-    }
-  }
-
-  async function enterInstructor() {
-    setError('')
-    const normalizedPin = String(instructorPin || '').trim()
-    if (!normalizedPin) {
-      setError('Sisesta juhendaja PIN-kood.')
-      return
-    }
-    try {
-      if (bookingSettings.appsScriptUrl) {
-        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', pin: normalizedPin })
-        if (data?.ok && data.instructor) {
-          setInstructorSession(data.instructor)
-          setView('instructor')
-          return
-        }
-      }
-    } catch (error) {
-      // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
-    }
-
-    const local = instructors.find((item) => item.active && String(item.pin) === normalizedPin)
-    if (local) {
-      setInstructorSession(local)
-      setView('instructor')
-    } else {
-      setError('PIN-kood ei sobi aktiivse juhendaja andmetega.')
-    }
-  }
-
   return (
     <Page>
-      <SectionHeader eyebrow="Töötajale" title="Vali roll ja sisene töövaatesse" text="Vali kõigepealt oma roll. Juhataja ja administraator sisenevad üldise PIN-koodiga. Ringijuht või juhendaja sisestab oma isikliku PIN-koodi." />
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-black">1. Vali roll</h2>
-          <div className="mt-4 grid gap-3">
-            {roles.filter(role => ['director', 'admin', 'collective'].includes(role.id)).map(role => (
-              <button key={role.id} onClick={() => { setSelectedRole(role.id); setError('') }} className={cx('rounded-2xl p-5 text-left ring-1', selectedRole === role.id ? 'bg-emerald-50 ring-emerald-200' : 'bg-white ring-slate-200')}>
-                <h3 className="font-black">{role.id === 'collective' ? 'Ringijuht / kollektiivijuht' : role.label}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{role.id === 'collective' ? 'Esitab proovide, lisaproovide või sündmuste muudatusi juhatajale kinnitamiseks.' : role.description}</p>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-black">2. Sisene</h2>
-          {!isInstructorRole ? (
-            <>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Juhataja ja administraator sisenevad PIN-koodiga. Vaikimisi PIN on prototüübis <b>2026</b>.</p>
-              <input value={adminPin} onChange={(e) => setAdminPin(e.target.value)} type="password" className="mt-4 w-full rounded-xl bg-slate-50 px-4 py-3 text-lg font-black tracking-widest outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="PIN" />
-              {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
-              <button onClick={enterAdmin} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava töölaud</button>
-              {isAdminUnlocked && <button onClick={() => setView('admin')} className="mt-3 w-full rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Mine tagasi töölauda</button>}
-            </>
-          ) : (
-            <>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Ringijuht või juhendaja sisestab oma isikliku PIN-koodi. Vorm avaneb ainult tema lubatud majade ja ruumide jaoks.</p>
-              <Field label="Isiklik PIN" required><input type="password" className={inputClass} value={instructorPin} onChange={(e) => setInstructorPin(e.target.value)} placeholder="PIN" /></Field>
-              {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
-              <button onClick={enterInstructor} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava juhendaja vorm</button>
-              <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis-PIN-id: 4821 või 7394.</p>
-            </>
-          )}
-        </section>
+      <SectionHeader eyebrow="Kontakt" title="Võta ühendust" text="Kirjuta, kui soovid küsida sündmuse, ringi või ruumi kasutamise kohta." />
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        {activeHouses.map((house) => (
+          <article key={house.id} className="rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <h3 className="text-lg font-black">{house.name}</h3>
+            <p className="mt-3 text-slate-600">{house.location}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {house.phone && <a href={`tel:${house.phone}`} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">Helista</a>}
+              <a href={`mailto:${house.email || bookingSettings.defaultEmail}?subject=${encodeURIComponent(house.name)}`} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800">Kirjuta</a>
+            </div>
+          </article>
+        ))}
       </div>
     </Page>
   )
 }
 
-function InstructorView({ events, activities, onUsageCreated, initialInstructor, clearInstructorSession }) {
-  const [pin, setPin] = useState('')
-  const [authError, setAuthError] = useState('')
-  const [instructor, setInstructor] = useState(null)
-  const [selectedRoomId, setSelectedRoomId] = useState('')
+function LoginView({ setView, setStaffRole, setStaffUser, setIsAdminUnlocked, setInstructorSession }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [setupToken, setSetupToken] = useState('')
+  const [name, setName] = useState('')
+  const [needsSetup, setNeedsSetup] = useState(false)
+  const [mode, setMode] = useState('login')
+  const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    jsonp(bookingSettings.appsScriptUrl, { action: 'bootstrapStatus' })
+      .then((result) => setNeedsSetup(Boolean(result?.needsSetup)))
+      .catch(() => {})
+  }, [])
+
+  async function login() {
+    if (busy) return
+    setError('')
+    setMessage('')
+    if (!email.trim() || !password) {
+      setError('Sisesta e-post ja parool.')
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await authenticateWithPassword(email.trim(), password)
+      if (!result?.ok || !result.user || !result.sessionToken) throw new Error(result?.error || 'Sisselogimine ebaõnnestus.')
+      activeSessionToken = result.sessionToken
+      activeSessionUser = result.user
+      setStaffRole(result.user.role)
+      setStaffUser(result.user)
+      setPassword('')
+      if (result.user.role === 'collective') {
+        setInstructorSession(result.user)
+        setView('instructor')
+      } else {
+        setIsAdminUnlocked(true)
+        setView('admin')
+      }
+    } catch (loginError) {
+      setError(loginError.message || 'E-post või parool ei sobi.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function bootstrap() {
+    if (busy) return
+    setError('')
+    setMessage('')
+    if (!setupToken.trim() || !name.trim() || !email.trim() || password.length < 12) {
+      setError('Sisesta algseadistuse võti, nimi, e-post ja vähemalt 12 märgiga parool.')
+      return
+    }
+    setBusy(true)
+    try {
+      const passwordData = await passwordPayload(password)
+      await postToAppsScript({
+        action: 'bootstrapUser',
+        setupToken: setupToken.trim(),
+        name: name.trim(),
+        email: email.trim(),
+        role: 'director',
+        ...passwordData
+      })
+      setNeedsSetup(false)
+      setMode('login')
+      setPassword('')
+      setSetupToken('')
+      setMessage('Juhataja kasutaja on loodud. Logi nüüd oma e-posti ja parooliga sisse.')
+    } catch (setupError) {
+      setError(setupError.message || 'Algseadistus ebaõnnestus.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Page>
+      <section className="mx-auto max-w-xl rounded-[1.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <SectionHeader eyebrow="Turvaline töötajate sissepääs" title={mode === 'setup' ? 'Loo esimene juhataja kasutaja' : 'Logi töötajana sisse'} text={mode === 'setup' ? 'Algseadistuse teeb ainult inimene, kellele on antud ühekordne seadistusvõti.' : 'Igal juhatajal, administraatoril ja kollektiivi juhil on oma konto. Roll tuleb kasutajast, mitte kasutaja valikust.'} />
+        {mode === 'setup' ? (
+          <div className="mt-5 grid gap-3">
+            <Field label="Ühekordne seadistusvõti" required><input type="password" autoComplete="off" className={inputClass} value={setupToken} onChange={(e) => setSetupToken(e.target.value)} /></Field>
+            <Field label="Nimi" required><input className={inputClass} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="E-post" required><input type="email" className={inputClass} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            <Field label="Parool" required><input type="password" minLength={12} className={inputClass} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+            <button disabled={busy} onClick={bootstrap} className="mt-3 rounded-2xl bg-emerald-700 px-5 py-3 font-black text-white disabled:bg-slate-300">{busy ? 'Loon kasutajat…' : 'Loo juhataja kasutaja'}</button>
+            <button onClick={() => setMode('login')} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-800">Tagasi sisselogimisele</button>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-3">
+            <Field label="E-post" required><input type="email" className={inputClass} autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} /></Field>
+            <Field label="Parool" required><input type="password" className={inputClass} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} /></Field>
+            {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{error}</p>}
+            {message && <p className="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{message}</p>}
+            <button disabled={busy} onClick={login} className="mt-3 rounded-2xl bg-emerald-700 px-5 py-3 font-black text-white disabled:bg-slate-300">{busy ? 'Kontrollin…' : 'Logi sisse'}</button>
+            {needsSetup && <button onClick={() => { setMode('setup'); setError(''); setMessage('') }} className="rounded-2xl bg-amber-50 px-5 py-3 text-left text-sm font-bold text-amber-900 ring-1 ring-amber-200">Esimene kasutaja puudub. Ava algseadistus.</button>}
+            <p className="text-xs leading-5 text-slate-500">Pärast viit vale katset lukustub konto 15 minutiks. Paroole ei salvestata rakenduse koodi ega Google Sheeti loetava tekstina.</p>
+          </div>
+        )}
+      </section>
+    </Page>
+  )
+}
+
+function InstructorView({ events, activities, onUsageCreated, initialInstructor, clearInstructorSession, setView }) {
+  const [instructor, setInstructor] = useState(initialInstructor || null)
+  const [selectedRoomId, setSelectedRoomId] = useState(initialInstructor?.roomId || '')
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
   const [form, setForm] = useState({
     requestType: 'Proov',
     recurrence: 'single',
@@ -1004,39 +1131,16 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
     notes: ''
   })
 
-  async function authenticate() {
-    setAuthError('')
-    const normalizedPin = String(pin || '').trim()
-    if (!normalizedPin) {
-      setAuthError('Sisesta juhendaja PIN-kood.')
-      return
-    }
-    try {
-      if (bookingSettings.appsScriptUrl) {
-        const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'authInstructor', pin: normalizedPin })
-        if (data?.ok && data.instructor) {
-          enterInstructor(data.instructor)
-          return
-        }
-      }
-    } catch (error) {
-      // Kui Apps Scripti kontroll ebaõnnestub, proovime prototüübi kohalikku nimekirja.
-    }
-
-    const local = instructors.find((item) => item.active && String(item.pin) === normalizedPin)
-    if (local) {
-      enterInstructor(local)
-    } else {
-      setAuthError('PIN-kood ei sobi aktiivse juhendaja andmetega.')
-    }
-  }
-
-  function logout() {
+  async function logout() {
+    const token = activeSessionToken
+    try { if (token) await postToAppsScript({ action: 'logout', sessionToken: token }) } catch (error) {}
     setInstructor(null)
+    activeSessionToken = ''
+    activeSessionUser = null
     setSelectedRoomId('')
-    setPin('')
     setMessage('')
     clearInstructorSession?.()
+    setView?.('login')
   }
 
   function allowedRoomsFor(activeInstructor) {
@@ -1050,7 +1154,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
     setInstructor(activeInstructor)
     setSelectedRoomId(firstRoom.id)
     setForm((current) => {
-      const date = current.date || '2026-06-09'
+      const date = current.date || todayISO()
       return { ...current, publicTitle: activeInstructor.collective || '', date, recurrenceStart: current.recurrenceStart || date, recurrenceEnd: current.recurrenceEnd || date, weekday: current.weekday || weekdayValue(date) }
     })
   }
@@ -1064,13 +1168,8 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   if (!instructor) {
     return (
       <Page>
-        <SectionHeader eyebrow="Juhendajale" title="Sisesta kollektiivi tegevus või prooviaja muudatus" text="Juhendaja ei avalda infot otse. Sisestus liigub juhatajale või administraatorile kinnitamiseks ning alles pärast kinnitamist ilmub see avalikku kalendrisse ja hakkab ruumi blokeerima." />
-        <section className="max-w-xl rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <Field label="Isiklik PIN" required><input type="password" className={inputClass} value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN" /></Field>
-          {authError && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800 ring-1 ring-rose-100">{authError}</p>}
-          <button onClick={authenticate} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Ava vorm</button>
-          <p className="mt-4 text-xs leading-5 text-slate-500">Prototüübi näidis-PIN-id: 4821 või 7394. Päris kasutuses määrab PIN-id juhataja.</p>
-        </section>
+        <SectionHeader eyebrow="Juhendajale" title="Sisselogimine on vajalik" text="Logi sisse oma isikliku kasutajaga. Pärast sisselogimist avaneb sinu rollile vastav vorm." />
+        <button onClick={() => setView?.('login')} className="rounded-2xl bg-emerald-700 px-5 py-3 font-black text-white">Ava sisselogimine</button>
       </Page>
     )
   }
@@ -1084,12 +1183,15 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   const previewCount = usageDates.length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
   const availability = getAvailability(selectedRoom.id, selectedDateForPanel, form.startTime, form.endTime, events, activities)
-  const canSubmit = usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
+  const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
 
   async function submitInstructorRequest() {
     if (!canSubmit) return
     const seriesId = form.recurrence === 'weekly' ? `SEERIA-${Date.now()}` : ''
     const created = []
+    setSending(true)
+    setMessage('Salvestan, palun oota…')
+    try {
 
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
@@ -1133,6 +1235,9 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 
     setMessage(form.recurrence === 'weekly' ? `Korduv sisestus saadeti kinnitamiseks. Loodi ${created.length} ootel kalendrikirjet.` : 'Sisestus saadeti juhatajale kinnitamiseks. Kui see kinnitatakse, ilmub see avalikku kalendrisse ja blokeerib ruumi.')
     setForm((current) => ({ ...current, notes: '' }))
+    } catch (error) {
+      setMessage(`Salvestus katkes. Kinnitatud salvestusi: ${created.length}. ${error.message}`)
+    } finally { setSending(false) }
   }
 
   return (
@@ -1150,12 +1255,12 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
             <Field label="Ruum" required><select className={inputClass} value={selectedRoom.id} onChange={(e) => setSelectedRoomId(e.target.value)}>{allowedRooms.filter((room) => room.house === selectedRoom.house).map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></Field>
             <Field label="Kordus" required><select className={inputClass} value={form.recurrence} onChange={(e) => setForm({ ...form, recurrence: e.target.value })}><option value="single">Ühekordne tegevus</option><option value="weekly">Kordub iga nädal</option></select></Field>
             {form.recurrence === 'single' ? (
-              <Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
+              <Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
             ) : (
               <>
                 <Field label="Nädalapäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
-                <Field label="Perioodi algus" required><input type="date" className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
-                <Field label="Perioodi lõpp" required><input type="date" className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
+                <Field label="Perioodi algus" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
+                <Field label="Perioodi lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
               </>
             )}
             <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
@@ -1174,7 +1279,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
           <button disabled={!canSubmit} onClick={submitInstructorRequest} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button>
         </section>
         <section className="space-y-5">
-          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || '2026-06-09'} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} />
+          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || todayISO()} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} />
           <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black">Valitud ruumi kasutus</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Kalender näitab valitud rahvamaja ja ruumi kinnitatud ning ootel kasutusi. Päeva valimisel näed täpseid aegu ja vabu vahemikke.</p>
@@ -1189,12 +1294,13 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshData }) {
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
   const [form, setForm] = useState({
     requestType: 'Proov',
     recurrence: 'single',
-    date: '2026-06-09',
-    recurrenceStart: '2026-06-09',
-    recurrenceEnd: '2026-06-09',
+    date: todayISO(),
+    recurrenceStart: todayISO(),
+    recurrenceEnd: todayISO(),
     weekday: '1',
     startTime: '19:00',
     endTime: '21:00',
@@ -1208,12 +1314,15 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
   const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities) }))
   const conflictCount = availabilityChecks.filter((item) => item.availability.status !== 'free').length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
-  const canSubmit = usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
+  const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
 
   async function createAdminUsage(status) {
     if (!canSubmit) return
     const seriesId = form.recurrence === 'weekly' ? `SEERIA-${Date.now()}` : ''
     const created = []
+    setSending(true)
+    setMessage('Salvestan, palun oota…')
+    try {
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
       const availability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities)
@@ -1239,7 +1348,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         eventType: form.requestType,
         participants: '',
         publicEvent: form.displayMode !== 'neutral',
-        name: selectedRole === 'admin' ? 'Administraator / kunstiline juht' : 'Rahvamaja juht',
+        name: selectedRole === 'admin' ? 'Administraator' : 'Juhataja',
         email: bookingSettings.defaultEmail,
         phone: '',
         publicTitle: form.displayMode === 'neutral' ? 'Rahvamaja kasutuses' : form.publicTitle,
@@ -1256,6 +1365,9 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
     setMessage(status === 'kinnitatud' ? `Loodi ja kinnitati ${created.length} kalendrikirjet.` : `Loodi ${created.length} ootel kalendrikirjet.`)
     setForm((current) => ({ ...current, notes: '' }))
     setTimeout(refreshData, 900)
+    } catch (error) {
+      setMessage(`Salvestus katkes. Kinnitatud salvestusi: ${created.length}. ${error.message}`)
+    } finally { setSending(false) }
   }
 
   return (
@@ -1273,12 +1385,12 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         <Field label="Kordus" required><select className={inputClass} value={form.recurrence} onChange={(e) => setForm({ ...form, recurrence: e.target.value })}><option value="single">Ühekordne tegevus</option><option value="weekly">Kordub iga nädal</option></select></Field>
         <Field label="Avaliku kalendri tekst" required><input className={inputClass} value={form.publicTitle} onChange={(e) => setForm({ ...form, publicTitle: e.target.value })} placeholder="nt Segakoori proov või Ringitegevus" /></Field>
         {form.recurrence === 'single' ? (
-          <Field label="Kuupäev" required><input type="date" className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
+          <Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, recurrenceStart: e.target.value, recurrenceEnd: e.target.value, weekday: weekdayValue(e.target.value) })} /></Field>
         ) : (
           <>
             <Field label="Nädalapäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
-            <Field label="Perioodi algus" required><input type="date" className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
-            <Field label="Perioodi lõpp" required><input type="date" className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
+            <Field label="Perioodi algus" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceStart} onChange={(e) => setForm({ ...form, recurrenceStart: e.target.value, date: e.target.value })} /></Field>
+            <Field label="Perioodi lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.recurrenceEnd} onChange={(e) => setForm({ ...form, recurrenceEnd: e.target.value })} /></Field>
           </>
         )}
         <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
@@ -1329,6 +1441,108 @@ function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle })
   )
 }
 
+function UserManagement({ role }) {
+  const [users, setUsers] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [resetFor, setResetFor] = useState(null)
+  const [resetPassword, setResetPassword] = useState('')
+  const [form, setForm] = useState({
+    name: '', email: '', role: role === 'director' ? 'admin' : 'collective',
+    password: '', collective: '', house: '', roomId: '', allowedRoomIds: ''
+  })
+
+  async function loadUsers() {
+    try {
+      const result = await jsonp(bookingSettings.appsScriptUrl, { action: 'listUsers', session: activeSessionToken })
+      if (!result?.ok) throw new Error(result?.error || 'Kasutajate laadimine ebaõnnestus.')
+      setUsers(result.users || [])
+    } catch (loadError) { setError(loadError.message) }
+  }
+
+  useEffect(() => { loadUsers() }, [])
+
+  async function createUser() {
+    if (busy) return
+    setError('')
+    setMessage('')
+    if (!form.name.trim() || !form.email.trim() || form.password.length < 12) {
+      setError('Sisesta nimi, e-post ja vähemalt 12 märgiga ajutine parool.')
+      return
+    }
+    if (form.role === 'collective' && !form.roomId.trim() && !form.allowedRoomIds.trim()) {
+      setError('Kollektiivi juhile määra vähemalt üks lubatud RoomID.')
+      return
+    }
+    setBusy(true)
+    try {
+      const passwordData = await passwordPayload(form.password)
+      await postToAppsScript({ action: 'createUser', ...form, ...passwordData })
+      setForm({ name: '', email: '', role: role === 'director' ? 'admin' : 'collective', password: '', collective: '', house: '', roomId: '', allowedRoomIds: '' })
+      setMessage('Kasutaja on loodud. Anna talle e-post ja ajutine parool turvalise kanali kaudu.')
+      await loadUsers()
+    } catch (createError) { setError(createError.message) } finally { setBusy(false) }
+  }
+
+  async function setActive(user, active) {
+    setError('')
+    try {
+      await postToAppsScript({ action: 'manageUser', userAction: 'setActive', userId: user.id, active: String(active) })
+      await loadUsers()
+    } catch (manageError) { setError(manageError.message) }
+  }
+
+  async function changePassword(user) {
+    if (busy) return
+    if (resetPassword.length < 12) { setError('Uus parool peab olema vähemalt 12 märki.'); return }
+    setBusy(true)
+    setError('')
+    try {
+      const passwordData = await passwordPayload(resetPassword)
+      await postToAppsScript({ action: 'manageUser', userAction: 'setPassword', userId: user.id, ...passwordData })
+      setResetFor(null)
+      setResetPassword('')
+      setMessage('Kasutaja ' + user.name + ' parool on muudetud.')
+      await loadUsers()
+    } catch (passwordError) { setError(passwordError.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-xl font-black">Kasutajate haldus</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Lisa juhatajaid, administraatoreid ja kollektiivi juhte. Sulgemine peatab ligipääsu, kuid ei kustuta kasutaja ajalugu.</p></div>
+        <button onClick={loadUsers} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Värskenda</button>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-2 lg:grid-cols-4">
+        <Field label="Nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+        <Field label="Roll" required><select className={inputClass} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="collective">Kollektiivi juht</option><option value="admin">Administraator</option>{role === 'director' && <option value="director">Juhataja</option>}</select></Field>
+        <Field label="Ajutine parool" required><input type="password" minLength={12} autoComplete="new-password" className={inputClass} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
+        <Field label="Kollektiiv"><input className={inputClass} value={form.collective} onChange={(e) => setForm({ ...form, collective: e.target.value })} /></Field>
+        <Field label="Rahvamaja"><input className={inputClass} value={form.house} onChange={(e) => setForm({ ...form, house: e.target.value })} placeholder="Konguta rahvamaja" /></Field>
+        <Field label="Põhiruum" required={role === 'collective'}><input className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })} placeholder="konguta-saal" /></Field>
+        <Field label="Lubatud RoomID-d" required={role === 'collective'}><input className={inputClass} value={form.allowedRoomIds} onChange={(e) => setForm({ ...form, allowedRoomIds: e.target.value })} placeholder="konguta-saal,rannu-saal" /></Field>
+        <button disabled={busy} onClick={createUser} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : 'Lisa kasutaja'}</button>
+      </div>
+      {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</p>}
+      {message && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900">{message}</p>}
+      <div className="mt-4 grid gap-3">
+        {users.map((user) => <article key={user.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><p className="font-black">{user.name}</p><p className="text-sm text-slate-600">{user.email} · {user.role}</p><p className="text-xs font-bold text-slate-500">{user.active ? 'Aktiivne' : 'Suletud'}{user.collective ? ' · ' + user.collective : ''}</p></div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setActive(user, !user.active)} disabled={user.id === activeSessionUser?.id} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50">{user.active ? 'Sulge ligipääs' : 'Ava ligipääs'}</button>
+              <button onClick={() => { setResetFor(user.id); setResetPassword(''); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda parooli</button>
+            </div>
+          </div>
+          {resetFor === user.id && <div className="mt-3 flex flex-wrap gap-2"><input type="password" minLength={12} autoComplete="new-password" className={cx(inputClass, 'max-w-sm')} placeholder="Uus vähemalt 12 märgiga parool" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><button disabled={busy} onClick={() => changePassword(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta uus parool</button><button onClick={() => setResetFor(null)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Katkesta</button></div>}
+        </article>)}
+      </div>
+    </section>
+  )
+}
+
 function AdminView({ setView, selectedRole, events, activities, bookings, setBookings, refreshData, setSheetUsages }) {
   const role = roles.find((r) => r.id === selectedRole)
   const pending = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'pending')
@@ -1342,21 +1556,18 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
 
   async function approve(booking) {
     const id = booking.bookingId || booking.id
-    const updated = { ...booking, status: 'kinnitatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' }
-    updateLocalBooking(id, updated)
-    setSheetUsages((current) => {
-      const exists = current.some((item) => String(item.bookingId || item.id) === String(id))
-      return exists ? current.map((item) => String(item.bookingId || item.id) === String(id) ? updated : item) : [...current, updated]
-    })
-    await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'kinnitatud', publicTitle: updated.publicTitle })
-    setTimeout(refreshData, 900)
+    try {
+      await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'kinnitatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      await refreshData()
+    } catch (error) { window.alert(error.message) }
   }
 
   async function cancel(booking) {
     const id = booking.bookingId || booking.id
-    updateLocalBooking(id, { status: 'tühistatud' })
-    await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
-    setTimeout(refreshData, 900)
+    try {
+      await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      await refreshData()
+    } catch (error) { window.alert(error.message) }
   }
 
   function updatePublicTitle(id, value) {
@@ -1377,7 +1588,7 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
   return (
     <Page>
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <SectionHeader eyebrow="Sisuhaldus" title={`Töölaud: ${role?.label || ''}`} text="PIN-koodiga vaates saab broneeringuid kinnitada. Kinnitamisel muutub kirje avalikus ruumikalendris kohe nähtavaks." />
+        <SectionHeader eyebrow="Sisuhaldus" title={`Töölaud: ${role?.label || ''}`} text="Sisselogitud töötaja saab broneeringuid kinnitada. Kinnitamisel muutub kirje avalikus ruumikalendris kohe nähtavaks." />
         <button onClick={refreshData} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-200">Värskenda andmeid</button>
       </div>
       <div className="grid gap-5 md:grid-cols-4">
@@ -1386,6 +1597,7 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
         <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Avalikke sündmusi</p><p className="mt-2 text-4xl font-black">{events.filter(e => e.displayMode === 'full').length}</p></div>
         <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Ringe</p><p className="mt-2 text-4xl font-black">{activities.length}</p></div>
       </div>
+      <UserManagement role={selectedRole} />
       <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} onCreated={handleAdminUsageCreated} refreshData={refreshData} />
       <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1406,34 +1618,37 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
 
 export default function App() {
   const [view, setView] = useState('home')
-  const [selectedRole, setSelectedRole] = useState('director')
+  const [staffRole, setStaffRole] = useState(null)
+  const [staffUser, setStaffUser] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [bookingDraft, setBookingDraft] = useState(null)
-  const [adminPin, setAdminPin] = useState('')
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false)
   const [sheetUsages, setSheetUsages] = useState([])
   const [bookings, setBookings] = useState([])
   const [instructorSession, setInstructorSession] = useState(null)
-  const [dataStatus, setDataStatus] = useState('Andmeid ei ole veel laaditud.')
+  const [dataStatus, setDataStatus] = useState('Laen ruumikalendrit...')
+  const [calendarReady, setCalendarReady] = useState(false)
 
   async function refreshData() {
+    setCalendarReady(false)
     if (!bookingSettings.appsScriptUrl) {
-      setDataStatus('Apps Scripti URL puudub, kasutatakse näidisandmeid.')
+      setDataStatus('Ruumikalendri ühendus puudub. Broneerimine ei ole saadaval.')
       return
     }
     try {
       setDataStatus('Laen Google Sheetist andmeid...')
-      const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'list' })
+      const data = await jsonp(bookingSettings.appsScriptUrl, { action: 'list', ...(activeSessionToken ? { session: activeSessionToken } : {}) })
       if (data?.ok) {
+        setCalendarReady(true)
         setBookings(data.bookings || [])
         setSheetUsages(data.usages || [])
         setDataStatus(`Andmed laaditud: ${(data.usages || []).filter(item => normalizeStatusForCalendar(item.status) === 'published').length} kinnitatud ja ${(data.bookings || []).filter(item => normalizeStatusForCalendar(item.status) === 'pending').length} ootel broneeringut.`)
       } else {
-        setDataStatus('Google Sheetist andmete laadimine ei õnnestunud, kasutatakse näidisandmeid.')
+        setDataStatus('Ruumikalendri laadimine ebaõnnestus. Broneerimine ei ole saadaval.')
       }
     } catch (error) {
-      setDataStatus('Andmete laadimine ebaõnnestus, kasutatakse näidisandmeid.')
+      setDataStatus('Ruumikalendri laadimine ebaõnnestus. Broneerimine ei ole saadaval.')
     }
   }
 
@@ -1476,9 +1691,9 @@ export default function App() {
     })
     return Array.from(map.values())
   }, [sheetUsages, bookings])
-  const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
-  const events = useMemo(() => [...initialEvents, ...sheetEvents], [sheetEvents])
-  const activities = initialActivities
+  const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => item && ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
+  const events = useMemo(() => sheetEvents, [sheetEvents])
+  const activities = []
   const selectedEvent = useMemo(() => events.find((event) => String(event.id) === String(selectedEventId)), [events, selectedEventId])
 
   function openEventDetails(event) {
@@ -1489,19 +1704,36 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
       <Header view={view} setView={setView} />
+      {isAdminUnlocked && <div className="mx-auto flex max-w-7xl items-center justify-end gap-3 px-4 py-2 text-sm">
+        <span>{roles.find(role => role.id === staffRole)?.label}</span>
+        <button className="rounded-xl bg-slate-100 px-4 py-3 font-bold" onClick={async () => {
+          const token = activeSessionToken
+          try { if (token) await postToAppsScript({ action: 'logout', sessionToken: token }) } catch (error) {}
+          activeSessionToken = ''
+          activeSessionUser = null
+          setIsAdminUnlocked(false)
+          setStaffRole(null)
+          setStaffUser(null)
+          setInstructorSession(null)
+          setBookings([])
+          setView('home')
+          refreshData()
+        }}>Logi välja</button>
+      </div>}
       <div className="mx-auto max-w-7xl px-4 pt-3 text-xs font-bold text-slate-500 md:px-8">{dataStatus}</div>
       {view === 'home' && <HomeView setView={setView} events={events} openEventDetails={openEventDetails} />}
       {view === 'events' && <EventsView events={events} openEventDetails={openEventDetails} />}
       {view === 'eventDetail' && <EventDetailView event={selectedEvent} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
-      {view === 'booking' && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
+      {view === 'booking' && !calendarReady && <Page><p role="alert">Ruumikalender ei ole saadaval. Palun proovi hiljem uuesti või kirjuta rahvamajale.</p></Page>}
+      {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
-      {view === 'instructor' && <InstructorView events={events} activities={activities} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
-      {view === 'login' && <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
-      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={selectedRole} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setView={setView} selectedRole={selectedRole} setSelectedRole={setSelectedRole} adminPin={adminPin} setAdminPin={setAdminPin} isAdminUnlocked={isAdminUnlocked} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
+      {view === 'login' && <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
+      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
       <MobileNav view={view} setView={setView} />
     </div>
   )
