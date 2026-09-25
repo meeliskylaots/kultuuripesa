@@ -19,7 +19,8 @@ const VIEW_LABELS = {
   contact: 'Kontakt',
   login: 'Töötajale',
   instructor: 'Juhendajale',
-  admin: 'Sisuhaldus'
+  admin: 'Sisuhaldus',
+  collectiveDetail: 'Kollektiiv'
 }
 
 const EVENT_TYPE_OPTIONS = ['Eraüritus', 'Koosolek', 'Koolitus', 'Töötuba', 'Kontsert', 'Kogukonnaüritus', 'Muu']
@@ -262,7 +263,11 @@ function jsonp(url, params = {}) {
     const callbackName = `kpJsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`
     const script = document.createElement('script')
     const search = new URLSearchParams({ ...params, callback: callbackName })
-    const timeout = setTimeout(() => { delete window[callbackName]; script.remove(); reject(new Error('Päring aegus.')) }, 12000)
+    const timeout = setTimeout(() => {
+      delete window[callbackName]
+      script.remove()
+      reject(new Error('Teenuse vastus aegus. Kontrolli ühendust ja Apps Scripti deploy olekut.'))
+    }, 30000)
     window[callbackName] = (data) => {
       clearTimeout(timeout)
       resolve(data)
@@ -294,8 +299,8 @@ async function postToAppsScript(payload) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body)
   })
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 350))
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 250))
     try {
       const result = await jsonp(bookingSettings.appsScriptUrl, {
         action: 'operationStatus',
@@ -306,12 +311,13 @@ async function postToAppsScript(payload) {
       if (!result?.ok) throw new Error(result?.error || 'Salvestamine ebaõnnestus.')
       return result
     } catch (error) {
-      if (attempt === 11) throw error
+      if (error?.message && !error.message.startsWith('Teenuse vastus aegus.')) throw error
+      if (attempt === 7) throw error
     }
   }
   throw new Error('Salvestuse kinnitamine aegus. Kontrolli töölauda enne uuesti saatmist.')
 }
-function getBlockingItems(events, activities) {
+function getBlockingItems(events = [], activities = []) {
   const eventItems = events
     .filter((item) => item.blocksRoom && ['published', 'kinnitatud', 'pending', 'ootel'].includes(normalizeStatusForCalendar(item.status)))
     .map((item) => ({ ...item, sourceType: 'event' }))
@@ -321,7 +327,30 @@ function getBlockingItems(events, activities) {
   return [...eventItems, ...activityItems]
 }
 
-function getRoomDayItems(roomId, dateISO, events, activities) {
+function buildRoomDayIndex(events = [], activities = []) {
+  const index = new Map()
+
+  getBlockingItems(events, activities).forEach((item) => {
+    const key = `${item.roomId}|${item.dateISO}`
+    const current = index.get(key) || []
+    current.push(item)
+    index.set(key, current)
+  })
+
+  for (const items of index.values()) {
+    items.sort(
+      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+    )
+  }
+
+  return index
+}
+
+function getRoomDayItems(roomId, dateISO, events = [], activities = [], roomDayIndex) {
+  if (roomDayIndex) {
+    return roomDayIndex.get(`${roomId}|${dateISO}`) || []
+  }
+
   return getBlockingItems(events, activities)
     .filter((item) => item.roomId === roomId && item.dateISO === dateISO)
     .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
@@ -343,9 +372,9 @@ function rangesOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart
 }
 
-function getAvailability(roomId, dateISO, startTime, endTime, events, activities) {
+function getAvailability(roomId, dateISO, startTime, endTime, events = [], activities = [], roomDayIndex) {
   const room = getRoomById(roomId)
-  const items = getRoomDayItems(roomId, dateISO, events, activities)
+  const items = getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex)
   const requestedStart = timeToMinutes(startTime)
   const requestedEnd = timeToMinutes(endTime)
   const reservedStart = requestedStart - (room.bufferBeforeMinutes || 0)
@@ -399,13 +428,15 @@ function getFreeSlots(items) {
   return free.filter((slot) => slot.end - slot.start >= 30)
 }
 
-function Header({ view, setView }) {
+function Header({ view, setView, isAdminUnlocked, staffRole }) {
   const nav = [
     ['events', 'Sündmused'],
     ['availability', 'Ruumid'],
     ['activities', 'Huvitegevus'],
     ['contact', 'Kontakt']
   ]
+  const staffView = isAdminUnlocked && staffRole ? 'admin' : 'login'
+  const staffLabel = isAdminUnlocked && staffRole ? 'Töölaud' : 'Töötajale'
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -422,9 +453,9 @@ function Header({ view, setView }) {
             <button key={id} onClick={() => setView(id)} className={cx('hover:text-emerald-700', (view === id || (id === 'availability' && ['roomDetail', 'booking'].includes(view))) && 'text-emerald-700')}>{label}</button>
           ))}
         </nav>
-        <button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100 md:hidden">Töötajale</button>
+        <button onClick={() => setView(staffView)} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100 md:hidden">{staffLabel}</button>
         <div className="hidden gap-2 md:flex">
-          <button onClick={() => setView('login')} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">Töötajale</button>
+          <button onClick={() => setView(staffView)} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">{staffLabel}</button>
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-200">Vaata sündmusi</button>
           <button onClick={() => setView('availability')} className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</button>
         </div>
@@ -547,13 +578,18 @@ function EventCard({ event, compact = false, onDetails }) {
 function EventsView({ events, openEventDetails }) {
   const [filter, setFilter] = useState('Kõik')
   const [query, setQuery] = useState('')
-  const publicEvents = events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full')
-  const filtered = publicEvents.filter((event) => {
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedQuery(query), 250)
+    return () => clearTimeout(timeout)
+  }, [query])
+  const publicEvents = useMemo(() => events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full'), [events])
+  const filtered = useMemo(() => publicEvents.filter((event) => {
     const text = `${event.title} ${event.house} ${event.audience} ${event.category} ${event.description}`.toLowerCase()
-    const q = text.includes(query.toLowerCase())
+    const q = text.includes(debouncedQuery.toLowerCase())
     const f = filter === 'Kõik' || event.house.includes(filter) || event.audience === filter || event.price === filter || (filter === 'Registreerimisega' && event.registration)
     return q && f
-  })
+  }), [debouncedQuery, filter, publicEvents])
   return (
     <Page>
       <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
@@ -648,7 +684,7 @@ function RoomCard({ room, onOpen }) {
   )
 }
 
-function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities }) {
+function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activities, roomDayIndex }) {
   const current = selectedDate || todayISO()
   const base = new Date(`${current.slice(0, 7)}-01T12:00:00`)
   const year = base.getFullYear()
@@ -673,7 +709,7 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
       <div className="grid grid-cols-7 gap-1">
         {cells.map((dateISO, index) => {
           if (!dateISO) return <div key={`empty-${index}`} className="min-h-16 rounded-xl bg-slate-50" />
-          const items = getRoomDayItems(roomId, dateISO, events, activities)
+          const items = getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex)
           const isSelected = dateISO === selectedDate
           const day = Number(dateISO.slice(-2))
           const hasPending = items.some((item) => normalizeStatusForCalendar(item.status) === 'pending')
@@ -696,12 +732,12 @@ function MonthCalendar({ roomId, selectedDate, setSelectedDate, events, activiti
   )
 }
 
-function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, setView, setBookingDraft }) {
+function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities, roomDayIndex, setView, setBookingDraft }) {
   const [selectedDate, setSelectedDate] = useState(todayISO())
   const [startTime, setStartTime] = useState('18:00')
   const [endTime, setEndTime] = useState('22:00')
   const room = getRoomById(selectedRoomId)
-  const availability = getAvailability(room.id, selectedDate, startTime, endTime, events, activities)
+  const availability = getAvailability(room.id, selectedDate, startTime, endTime, events, activities, roomDayIndex)
   const canContinue = availability.status === 'free'
 
   function continueBooking() {
@@ -738,7 +774,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
           </div>
         </div>
         <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
-          <MonthCalendar roomId={room.id} selectedDate={selectedDate} setSelectedDate={setSelectedDate} events={events} activities={activities} />
+          <MonthCalendar roomId={room.id} selectedDate={selectedDate} setSelectedDate={setSelectedDate} events={events} activities={activities} roomDayIndex={roomDayIndex} />
           <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black text-slate-950">Vali kasutusaeg</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast. Kontroll toimub koos puhvriga.</p>
@@ -746,7 +782,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
               <Field label="Algusaeg" required><input type="time" className={inputClass} value={startTime} onChange={(e) => setStartTime(e.target.value)} /></Field>
               <Field label="Lõpuaeg" required><input type="time" className={inputClass} value={endTime} onChange={(e) => setEndTime(e.target.value)} /></Field>
             </div>
-            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} /></div>
+            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={room.id} dateISO={selectedDate} roomDayIndex={roomDayIndex} /></div>
             {availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on esialgu vaba. Ruum hoitakse puhvrit arvestades kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}
             {availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Seda aega ei saa valida.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}
             {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}
@@ -758,9 +794,9 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
   )
 }
 
-function AvailabilityPanel({ events, activities, roomId, dateISO }) {
+function AvailabilityPanel({ events, activities, roomId, dateISO, roomDayIndex }) {
   const room = getRoomById(roomId)
-  const items = getRoomDayItems(roomId, dateISO, events, activities)
+  const items = getRoomDayItems(roomId, dateISO, events, activities, roomDayIndex)
   const freeSlots = getFreeSlots(items)
   return (
     <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -808,7 +844,7 @@ function StepBadge({ step, current, label }) {
   return <div className={cx('rounded-2xl px-3 py-2 text-xs font-black ring-1', step === current ? 'bg-emerald-700 text-white ring-emerald-700' : step < current ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-white text-slate-500 ring-slate-200')}>{step}. {label}</div>
 }
 
-function BookingView({ events, activities, initialDraft, onBookingCreated }) {
+function BookingView({ events, activities, roomDayIndex, initialDraft, onBookingCreated }) {
   const [step, setStep] = useState(initialDraft ? 2 : 1)
   const [form, setForm] = useState({
     roomId: initialDraft?.roomId || rentalRooms[0].id,
@@ -828,7 +864,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
   const [submitMessage, setSubmitMessage] = useState('')
   const [sending, setSending] = useState(false)
   const room = getRoomById(form.roomId)
-  const availability = getAvailability(form.roomId, form.date, form.startTime, form.endTime, events, activities)
+  const availability = getAvailability(form.roomId, form.date, form.startTime, form.endTime, events, activities, roomDayIndex)
   const requestedHours = Math.max(0, (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60)
   const billableHours = Math.max(requestedHours, room.minimumHours || 1)
   const selectedServices = rentalServices.filter((service) => form.services.includes(service.id)).map((service) => ({ ...service, total: service.pricing === 'hourly' ? service.price * billableHours : service.price }))
@@ -923,7 +959,7 @@ function BookingView({ events, activities, initialDraft, onBookingCreated }) {
           <p className="mt-4 text-xs leading-5 text-white/55 lg:mt-5">{bookingSettings.priceDisclaimer}</p>
         </aside>
         <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-6">
-          {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
+          {step === 1 && <BookingStepRoom form={form} setForm={setForm} availability={availability} room={room} events={events} activities={activities} roomDayIndex={roomDayIndex} onNext={() => setStep(2)} canNext={canContinueFromStep1} />}
           {step === 2 && <BookingStepEvent form={form} setForm={setForm} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
           {step === 3 && <BookingStepServices form={form} room={room} toggleService={toggleService} onBack={() => setStep(2)} onNext={() => setStep(4)} />}
           {step === 4 && <BookingStepContact sending={sending} form={form} setForm={setForm} onBack={() => setStep(3)} onSubmit={submitBooking} submitMessage={submitMessage} />}
@@ -938,8 +974,8 @@ function Field({ label, required, children }) {
 }
 const inputClass = 'w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500'
 
-function BookingStepRoom({ form, setForm, availability, room, events, activities, onNext, canNext }) {
-  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
+function BookingStepRoom({ form, setForm, availability, room, events, activities, roomDayIndex, onNext, canNext }) {
+  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} roomDayIndex={roomDayIndex} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
 }
 
 function BookingStepEvent({ form, setForm, onBack, onNext }) {
@@ -1112,7 +1148,7 @@ function LoginView({ setView, setStaffRole, setStaffUser, setIsAdminUnlocked, se
   )
 }
 
-function InstructorView({ events, activities, onUsageCreated, initialInstructor, clearInstructorSession, setView }) {
+function InstructorView({ events, activities, roomDayIndex, onUsageCreated, initialInstructor, clearInstructorSession, setView, onOpenCollectiveDetail, editCollective, onEditHandled }) {
   const [instructor, setInstructor] = useState(initialInstructor || null)
   const [selectedRoomId, setSelectedRoomId] = useState(initialInstructor?.roomId || '')
   const [message, setMessage] = useState('')
@@ -1178,11 +1214,11 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
   const selectedRoom = getRoomById(selectedRoomId || instructor.roomId)
   const allowedHouses = [...new Set(allowedRooms.map((room) => room.house))]
   const usageDates = usageDatesFromForm(form)
-  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities) }))
+  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex) }))
   const conflictCount = availabilityChecks.filter((item) => item.availability.status !== 'free').length
   const previewCount = usageDates.length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
-  const availability = getAvailability(selectedRoom.id, selectedDateForPanel, form.startTime, form.endTime, events, activities)
+  const availability = getAvailability(selectedRoom.id, selectedDateForPanel, form.startTime, form.endTime, events, activities, roomDayIndex)
   const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
 
   async function submitInstructorRequest() {
@@ -1195,7 +1231,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
 
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
-      const itemAvailability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities)
+      const itemAvailability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex)
       const usageId = `${form.recurrence === 'weekly' ? 'KR' : 'JR'}-${Date.now()}-${index + 1}`
       const payload = {
         action: 'createUsage',
@@ -1223,6 +1259,7 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
         phone: '',
         publicTitle: form.publicTitle,
         displayMode: form.displayMode,
+        seriesId,
         notes: [form.notes, seriesId ? `Korduv tegevus: ${recurrenceSummary(form)}. Seeria ID: ${seriesId}. Kord ${index + 1}/${usageDates.length}.` : ''].filter(Boolean).join('\n'),
         disclaimer: 'Juhendaja sisestus ootab juhataja või administraatori kinnitust.',
         suppressStaffEmail: form.recurrence === 'weekly' && index > 0
@@ -1279,19 +1316,20 @@ function InstructorView({ events, activities, onUsageCreated, initialInstructor,
           <button disabled={!canSubmit} onClick={submitInstructorRequest} className="mt-5 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Saada kinnitamiseks</button>
         </section>
         <section className="space-y-5">
-          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || todayISO()} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} />
+          <MonthCalendar roomId={selectedRoom.id} selectedDate={selectedDateForPanel || todayISO()} setSelectedDate={(date) => setForm({ ...form, date, recurrenceStart: form.recurrence === 'weekly' ? date : form.recurrenceStart, weekday: weekdayValue(date) })} events={events} activities={activities} roomDayIndex={roomDayIndex} />
           <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black">Valitud ruumi kasutus</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">Kalender näitab valitud rahvamaja ja ruumi kinnitatud ning ootel kasutusi. Päeva valimisel näed täpseid aegu ja vabu vahemikke.</p>
-            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} /></div>
+            <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} roomDayIndex={roomDayIndex} /></div>
           </div>
         </section>
       </div>
+      <CollectiveManagement selfOnly onOpenDetail={onOpenCollectiveDetail} editCollective={editCollective} onEditHandled={onEditHandled} />
     </Page>
   )
 }
 
-function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshData }) {
+function AdminUsageForm({ selectedRole, events, activities, roomDayIndex, onCreated, refreshData }) {
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
@@ -1311,7 +1349,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
 
   const selectedRoom = getRoomById(selectedRoomId)
   const usageDates = usageDatesFromForm(form)
-  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities) }))
+  const availabilityChecks = usageDates.map((date) => ({ date, availability: getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex) }))
   const conflictCount = availabilityChecks.filter((item) => item.availability.status !== 'free').length
   const selectedDateForPanel = form.recurrence === 'weekly' ? (form.recurrenceStart || form.date) : form.date
   const canSubmit = !sending && usageDates.length > 0 && form.startTime && form.endTime && form.publicTitle && conflictCount === 0
@@ -1325,7 +1363,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
     try {
     for (let index = 0; index < usageDates.length; index += 1) {
       const date = usageDates[index]
-      const availability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities)
+      const availability = getAvailability(selectedRoom.id, date, form.startTime, form.endTime, events, activities, roomDayIndex)
       const usageId = `${status === 'kinnitatud' ? 'KT' : 'OT'}-${Date.now()}-${index + 1}`
       const payload = {
         action: 'createUsage',
@@ -1353,6 +1391,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         phone: '',
         publicTitle: form.displayMode === 'neutral' ? 'Rahvamaja kasutuses' : form.publicTitle,
         displayMode: form.displayMode,
+        seriesId,
         notes: [form.notes, seriesId ? `Korduv tegevus: ${recurrenceSummary(form)}. Seeria ID: ${seriesId}. Kord ${index + 1}/${usageDates.length}.` : ''].filter(Boolean).join('\n'),
         disclaimer: status === 'kinnitatud' ? 'Sisestatud ja kinnitatud töötaja vaates.' : 'Sisestatud töötaja vaates ja jäetud ootele.',
         suppressStaffEmail: (form.recurrence === 'weekly' && index > 0) || status === 'kinnitatud'
@@ -1402,7 +1441,7 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
         <b>Eelvaade:</b> {form.recurrence === 'weekly' ? `${recurrenceSummary(form)}. Luuakse ${usageDates.length} kirjet.` : 'Ühekordne tegevus.'}
         {conflictCount > 0 && <span className="mt-1 block font-bold text-rose-800">{conflictCount} kirjet kattub olemasoleva ruumikasutusega. Muuda aega, ruumi või perioodi.</span>}
       </div>
-      <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} /></div>
+      <div className="mt-4"><AvailabilityPanel events={events} activities={activities} roomId={selectedRoom.id} dateISO={selectedDateForPanel} roomDayIndex={roomDayIndex} /></div>
       {message && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{message}</p>}
       <div className="mt-5 flex flex-wrap gap-2">
         <button disabled={!canSubmit} onClick={() => createAdminUsage('ootel')} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800 hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300">Salvesta ootele</button>
@@ -1413,8 +1452,9 @@ function AdminUsageForm({ selectedRole, events, activities, onCreated, refreshDa
 }
 
 
-function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle }) {
+function AdminBookingCard({ booking, onApprove, onCancel, onCancelSeries, onUpdatePublicTitle }) {
   const room = getRoomById(booking.roomId || roomIdFromHouseAndRoom(booking.house, booking.roomName || booking.room))
+  const seriesId = booking.seriesId || booking.notes?.match(/Seeria ID:\s*([^\s.]+)/i)?.[1] || ''
   return (
     <article className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1434,6 +1474,7 @@ function AdminBookingCard({ booking, onApprove, onCancel, onUpdatePublicTitle })
         <div className="flex flex-wrap gap-2">
           {normalizeStatusForCalendar(booking.status) === 'pending' && <button onClick={() => onApprove(booking)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Kinnita</button>}
           <button onClick={() => onCancel(booking)} className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-black text-rose-800 ring-1 ring-rose-100 hover:bg-rose-100">Tühista</button>
+          {seriesId && <button onClick={() => onCancelSeries(seriesId)} className="rounded-xl bg-rose-100 px-4 py-3 text-sm font-black text-rose-900 hover:bg-rose-200">Tühista kogu seeria</button>}
         </div>
       </div>
       {booking.notes && <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-600 ring-1 ring-slate-200">{booking.notes}</p>}
@@ -1448,9 +1489,15 @@ function UserManagement({ role }) {
   const [message, setMessage] = useState('')
   const [resetFor, setResetFor] = useState(null)
   const [resetPassword, setResetPassword] = useState('')
+  const [profileFor, setProfileFor] = useState(null)
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', collective: '', house: '', phone: '', website: '', socialMedia: '', allowedRoomIds: '' })
   const [form, setForm] = useState({
     name: '', email: '', role: role === 'director' ? 'admin' : 'collective',
-    password: '', collective: '', house: '', roomId: '', allowedRoomIds: ''
+    password: '', collective: '', house: '', roomId: '', allowedRoomIds: '',
+    phone: '', website: '', socialMedia: '', collectiveRoomId: rentalRooms[0]?.id || '',
+    collectiveWeekday: '1', collectiveStartTime: '19:00', collectiveEndTime: '21:00',
+    collectiveScheduleStart: todayISO(), collectiveScheduleEnd: todayISO(),
+    collectiveContactEmail: '', collectivePhone: '', collectiveWebsite: '', collectiveSocialMedia: '', collectiveDescription: ''
   })
 
   async function loadUsers() {
@@ -1471,16 +1518,44 @@ function UserManagement({ role }) {
       setError('Sisesta nimi, e-post ja vähemalt 12 märgiga ajutine parool.')
       return
     }
-    if (form.role === 'collective' && !form.roomId.trim() && !form.allowedRoomIds.trim()) {
-      setError('Kollektiivi juhile määra vähemalt üks lubatud RoomID.')
+    if (form.role === 'collective' && (!form.allowedRoomIds.trim() || !form.collective.trim() || !form.collectiveScheduleStart || !form.collectiveScheduleEnd)) {
+      setError('Kollektiivi juhile vali vähemalt üks lubatud ruum.')
+      return
+    }
+    const allowedRoomIds = form.allowedRoomIds
+      .split(',')
+      .map((roomId) => roomId.trim())
+      .filter(Boolean)
+    const knownRoomIds = new Set(rentalRooms.map((room) => room.id))
+    const invalidRoomIds = allowedRoomIds.filter((roomId) => !knownRoomIds.has(roomId))
+    if (invalidRoomIds.length > 0) {
+      setError(`Valitud ruumide andmed ei sobi: ${invalidRoomIds.join(', ')}.`)
       return
     }
     setBusy(true)
     try {
       const passwordData = await passwordPayload(form.password)
-      await postToAppsScript({ action: 'createUser', ...form, ...passwordData })
-      setForm({ name: '', email: '', role: role === 'director' ? 'admin' : 'collective', password: '', collective: '', house: '', roomId: '', allowedRoomIds: '' })
-      setMessage('Kasutaja on loodud. Anna talle e-post ja ajutine parool turvalise kanali kaudu.')
+      const userResult = await postToAppsScript({ action: 'createUser', ...form, ...passwordData })
+      if (form.role === 'collective') {
+        await postToAppsScript({
+          action: 'createCollective',
+          name: form.collective,
+          leaderUserId: userResult.user?.id,
+          roomId: form.collectiveRoomId,
+          weekday: form.collectiveWeekday,
+          startTime: form.collectiveStartTime,
+          endTime: form.collectiveEndTime,
+          scheduleStart: form.collectiveScheduleStart,
+          scheduleEnd: form.collectiveScheduleEnd,
+          contactEmail: form.collectiveContactEmail || form.email,
+          phone: form.collectivePhone || form.phone,
+          website: form.collectiveWebsite,
+          socialMedia: form.collectiveSocialMedia,
+          description: form.collectiveDescription
+        })
+      }
+      setForm({ name: '', email: '', role: role === 'director' ? 'admin' : 'collective', password: '', collective: '', house: '', roomId: '', allowedRoomIds: '', phone: '', website: '', socialMedia: '', collectiveRoomId: rentalRooms[0]?.id || '', collectiveWeekday: '1', collectiveStartTime: '19:00', collectiveEndTime: '21:00', collectiveScheduleStart: todayISO(), collectiveScheduleEnd: todayISO(), collectiveContactEmail: '', collectivePhone: '', collectiveWebsite: '', collectiveSocialMedia: '', collectiveDescription: '' })
+      setMessage(form.role === 'collective' ? 'Kollektiivijuht ja tema kollektiiv on loodud.' : 'Kasutaja on loodud. Anna talle e-post ja ajutine parool turvalise kanali kaudu.')
       await loadUsers()
     } catch (createError) { setError(createError.message) } finally { setBusy(false) }
   }
@@ -1508,6 +1583,18 @@ function UserManagement({ role }) {
     } catch (passwordError) { setError(passwordError.message) } finally { setBusy(false) }
   }
 
+  async function saveProfile(user) {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await postToAppsScript({ action: 'manageUser', userAction: 'updateProfile', userId: user.id, ...profileForm, roomId: profileForm.allowedRoomIds.split(',')[0] || '' })
+      setProfileFor(null)
+      setMessage(`${user.name} andmed on uuendatud.`)
+      await loadUsers()
+    } catch (profileError) { setError(profileError.message) } finally { setBusy(false) }
+  }
+
   return (
     <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1519,10 +1606,35 @@ function UserManagement({ role }) {
         <Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
         <Field label="Roll" required><select className={inputClass} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="collective">Kollektiivi juht</option><option value="admin">Administraator</option>{role === 'director' && <option value="director">Juhataja</option>}</select></Field>
         <Field label="Ajutine parool" required><input type="password" minLength={12} autoComplete="new-password" className={inputClass} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
-        <Field label="Kollektiiv"><input className={inputClass} value={form.collective} onChange={(e) => setForm({ ...form, collective: e.target.value })} /></Field>
+        {form.role === 'collective' ? <Field label="Kollektiivi nimi" required><input className={inputClass} value={form.collective} onChange={(e) => setForm({ ...form, collective: e.target.value })} /></Field> : <Field label="Kollektiiv"><input className={inputClass} value={form.collective} onChange={(e) => setForm({ ...form, collective: e.target.value })} /></Field>}
         <Field label="Rahvamaja"><input className={inputClass} value={form.house} onChange={(e) => setForm({ ...form, house: e.target.value })} placeholder="Konguta rahvamaja" /></Field>
-        <Field label="Põhiruum" required={role === 'collective'}><input className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })} placeholder="konguta-saal" /></Field>
-        <Field label="Lubatud RoomID-d" required={role === 'collective'}><input className={inputClass} value={form.allowedRoomIds} onChange={(e) => setForm({ ...form, allowedRoomIds: e.target.value })} placeholder="konguta-saal,rannu-saal" /></Field>
+        <Field label="Telefon"><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+372 ..." /></Field>
+        <Field label="Koduleht"><input type="url" className={inputClass} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://..." /></Field>
+        <Field label="Sotsiaalmeedia"><input className={inputClass} value={form.socialMedia} onChange={(e) => setForm({ ...form, socialMedia: e.target.value })} placeholder="Facebook või Instagram" /></Field>
+        {form.role === 'collective' && <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200 lg:col-span-4"><p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Kollektiivi proovigraafik ja avalikud andmed</p><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4"><Field label="Prooviruum" required><select className={inputClass} value={form.collectiveRoomId} onChange={(e) => setForm({ ...form, collectiveRoomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Proovipäev" required><select className={inputClass} value={form.collectiveWeekday} onChange={(e) => setForm({ ...form, collectiveWeekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field><Field label="Algus" required><input type="time" className={inputClass} value={form.collectiveStartTime} onChange={(e) => setForm({ ...form, collectiveStartTime: e.target.value })} /></Field><Field label="Lõpp" required><input type="time" className={inputClass} value={form.collectiveEndTime} onChange={(e) => setForm({ ...form, collectiveEndTime: e.target.value })} /></Field><Field label="Graafiku algus" required><input type="date" min={todayISO()} className={inputClass} value={form.collectiveScheduleStart} onChange={(e) => setForm({ ...form, collectiveScheduleStart: e.target.value })} /></Field><Field label="Graafiku lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.collectiveScheduleEnd} onChange={(e) => setForm({ ...form, collectiveScheduleEnd: e.target.value })} /></Field><Field label="Kollektiivi e-post"><input type="email" className={inputClass} value={form.collectiveContactEmail} onChange={(e) => setForm({ ...form, collectiveContactEmail: e.target.value })} placeholder={form.email || 'kontakt@kollektiiv.ee'} /></Field><Field label="Kollektiivi telefon"><input type="tel" className={inputClass} value={form.collectivePhone} onChange={(e) => setForm({ ...form, collectivePhone: e.target.value })} placeholder={form.phone || '+372 ...'} /></Field><Field label="Koduleht"><input className={inputClass} value={form.collectiveWebsite} onChange={(e) => setForm({ ...form, collectiveWebsite: e.target.value })} /></Field><Field label="Sotsiaalmeedia"><input className={inputClass} value={form.collectiveSocialMedia} onChange={(e) => setForm({ ...form, collectiveSocialMedia: e.target.value })} /></Field><Field label="Kirjeldus"><textarea className={`${inputClass} min-h-[80px] md:col-span-2`} value={form.collectiveDescription} onChange={(e) => setForm({ ...form, collectiveDescription: e.target.value })} /></Field></div></div>}
+        <fieldset className="rounded-xl bg-white p-3 ring-1 ring-slate-200 lg:col-span-2">
+          <legend className="px-1 text-xs font-black uppercase tracking-wide text-slate-500">Lubatud ruumid {form.role === 'collective' && <span className="text-rose-600">*</span>}</legend>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {rentalRooms.map((room) => {
+              const selected = form.allowedRoomIds.split(',').map((roomId) => roomId.trim()).includes(room.id)
+              return (
+                <label key={room.id} className="flex cursor-pointer items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm ring-1 ring-slate-200 hover:bg-emerald-50">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => setForm((current) => {
+                      const ids = current.allowedRoomIds.split(',').map((roomId) => roomId.trim()).filter(Boolean)
+                      const nextIds = selected ? ids.filter((roomId) => roomId !== room.id) : [...ids, room.id]
+                      return { ...current, allowedRoomIds: nextIds.join(',') }
+                    })}
+                    className="mt-1"
+                  />
+                  <span><b>{room.house}</b><span className="block text-slate-600">{room.name}</span></span>
+                </label>
+              )
+            })}
+          </div>
+        </fieldset>
         <button disabled={busy} onClick={createUser} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : 'Lisa kasutaja'}</button>
       </div>
       {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</p>}
@@ -1533,8 +1645,10 @@ function UserManagement({ role }) {
             <div><p className="font-black">{user.name}</p><p className="text-sm text-slate-600">{user.email} · {user.role}</p><p className="text-xs font-bold text-slate-500">{user.active ? 'Aktiivne' : 'Suletud'}{user.collective ? ' · ' + user.collective : ''}</p></div>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => setActive(user, !user.active)} disabled={user.id === activeSessionUser?.id} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50">{user.active ? 'Sulge ligipääs' : 'Ava ligipääs'}</button>
+              <button onClick={() => { setProfileFor(user.id); setProfileForm({ name: user.name || '', email: user.email || '', collective: user.collective || '', house: user.house || '', phone: user.phone || '', website: user.website || '', socialMedia: user.socialMedia || '', allowedRoomIds: (user.allowedRoomIds || []).join(',') }); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda andmeid</button>
               <button onClick={() => { setResetFor(user.id); setResetPassword(''); setError('') }} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Muuda parooli</button>
             </div>
+            {profileFor === user.id && <div className="mt-3 grid gap-2 rounded-xl bg-white p-3 ring-1 ring-slate-200 md:grid-cols-2"><Field label="Nimi"><input className={inputClass} value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} /></Field><Field label="E-post"><input type="email" className={inputClass} value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} /></Field><Field label="Kollektiiv"><input className={inputClass} value={profileForm.collective} onChange={(e) => setProfileForm({ ...profileForm, collective: e.target.value })} /></Field><Field label="Rahvamaja"><input className={inputClass} value={profileForm.house} onChange={(e) => setProfileForm({ ...profileForm, house: e.target.value })} /></Field><Field label="Telefon"><input className={inputClass} value={profileForm.phone} onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} /></Field><Field label="Koduleht"><input className={inputClass} value={profileForm.website} onChange={(e) => setProfileForm({ ...profileForm, website: e.target.value })} /></Field><Field label="Sotsiaalmeedia"><input className={inputClass} value={profileForm.socialMedia} onChange={(e) => setProfileForm({ ...profileForm, socialMedia: e.target.value })} /></Field><div className="flex items-end gap-2"><button disabled={busy} onClick={() => saveProfile(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta</button><button onClick={() => setProfileFor(null)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">Katkesta</button></div></div>}
           </div>
           {resetFor === user.id && <div className="mt-3 flex flex-wrap gap-2"><input type="password" minLength={12} autoComplete="new-password" className={cx(inputClass, 'max-w-sm')} placeholder="Uus vähemalt 12 märgiga parool" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><button disabled={busy} onClick={() => changePassword(user)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white">Salvesta uus parool</button><button onClick={() => setResetFor(null)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Katkesta</button></div>}
         </article>)}
@@ -1543,12 +1657,242 @@ function UserManagement({ role }) {
   )
 }
 
-function AdminView({ setView, selectedRole, events, activities, bookings, setBookings, refreshData, setSheetUsages }) {
+function CollectiveManagement({ selfOnly = false, allowCreate = true, onOpenDetail, editCollective, onEditHandled }) {
+  const [collectives, setCollectives] = useState([])
+  const [changeRequests, setChangeRequests] = useState([])
+  const [leaders, setLeaders] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [editingId, setEditingId] = useState('')
+  const activeCollectiveLeaders = (userResult) => (userResult.users || []).filter((user) => {
+    const role = String(user?.role || '').trim().toLowerCase()
+    const active = user?.active === true || ['true', 'jah', 'yes', '1'].includes(String(user?.active || '').trim().toLowerCase())
+    return role === 'collective' && active
+  })
+  const [form, setForm] = useState({
+    name: '', leaderUserId: '', roomId: rentalRooms[0]?.id || '', weekday: '1',
+    startTime: '19:00', endTime: '21:00', scheduleStart: todayISO(), scheduleEnd: todayISO(),
+    contactEmail: '', phone: '', website: '', socialMedia: '', description: ''
+  })
+
+  async function load() {
+    try {
+      const collectiveResult = await jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectives', session: activeSessionToken })
+      const changeResult = await jsonp(bookingSettings.appsScriptUrl, { action: 'listCollectiveChanges', session: activeSessionToken })
+      const userResult = selfOnly ? { ok: true, users: [activeSessionUser] } : await jsonp(bookingSettings.appsScriptUrl, { action: 'listUsers', session: activeSessionToken })
+      if (!collectiveResult?.ok) throw new Error(collectiveResult?.error || 'Kollektiivide laadimine ebaõnnestus.')
+      if (!changeResult?.ok) throw new Error(changeResult?.error || 'Kooskõlastuste laadimine ebaõnnestus.')
+      if (!userResult?.ok) throw new Error(userResult?.error || 'Kollektiivijuhtide laadimine ebaõnnestus.')
+      setCollectives(collectiveResult.collectives || [])
+      setChangeRequests((changeResult.changes || []).filter((item) => item.status === 'ootel'))
+      setLeaders(activeCollectiveLeaders(userResult))
+      if (selfOnly && activeSessionUser?.id) setForm((current) => ({ ...current, leaderUserId: activeSessionUser.id }))
+    } catch (loadError) { setError(loadError.message) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (!editCollective) return
+    setEditingId(editCollective.id)
+    setForm({ name: editCollective.name, leaderUserId: editCollective.leaderUserId,
+      roomId: editCollective.roomId, weekday: editCollective.weekday,
+      startTime: editCollective.startTime, endTime: editCollective.endTime,
+      scheduleStart: todayISO(), scheduleEnd: todayISO(),
+      contactEmail: editCollective.contactEmail || '', phone: editCollective.phone || '',
+      website: editCollective.website || '', socialMedia: editCollective.socialMedia || '',
+      description: editCollective.description || '' })
+    onEditHandled?.()
+  }, [editCollective])
+
+  async function createCollective() {
+    if (busy) return
+    setError('')
+    setMessage('')
+    if (!form.name.trim() || !form.leaderUserId || !form.scheduleStart || !form.scheduleEnd) {
+      setError('Täida kollektiivi nimi, juht ja proovigraafiku periood.')
+      return
+    }
+    setBusy(true)
+    try {
+      await postToAppsScript({ action: editingId ? (selfOnly ? 'requestCollectiveUpdate' : 'updateCollective') : 'createCollective', ...(editingId ? { collectiveId: editingId } : {}), ...form })
+      setMessage(editingId ? (selfOnly ? 'Muudatus ootab juhataja või administraatori kinnitust.' : 'Kollektiivi andmed on uuendatud.') : 'Kollektiiv ja korduv proovigraafik on loodud.')
+      setEditingId('')
+      setForm((current) => ({ ...current, name: '', leaderUserId: selfOnly ? activeSessionUser?.id || '' : '', scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: '', phone: '', website: '', socialMedia: '', description: '' }))
+      await load()
+    } catch (createError) { setError(createError.message) } finally { setBusy(false) }
+  }
+
+  async function toggleActive(collective) {
+    const leader = leaders.find((user) => user.id === collective.leaderUserId)
+    if (!leader) { setError('Kollektiivi juhti ei leitud aktiivsete kasutajate seast.'); return }
+    setError('')
+    try {
+      await postToAppsScript({
+        action: 'updateCollective', collectiveId: collective.id, name: collective.name,
+        leaderUserId: collective.leaderUserId, roomId: collective.roomId, weekday: collective.weekday,
+        startTime: collective.startTime, endTime: collective.endTime, active: !collective.active
+      })
+      await load()
+    } catch (updateError) { setError(updateError.message) }
+  }
+
+  async function decideChange(change, decision) {
+    setError('')
+    setBusy(true)
+    try {
+      await postToAppsScript({ action: 'decideCollectiveChange', changeId: change.id, decision })
+      setMessage(decision === 'kinnitatud' ? 'Kollektiivi andmed kinnitati.' : 'Muudatus lükati tagasi.')
+      await load()
+    } catch (decisionError) { setError(decisionError.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-xl font-black">Kollektiivide haldus</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Lisa kollektiiv, seo see olemasoleva kollektiivijuhiga ja loo korduvad proovid. Konfliktid kontrollitakse serveris enne salvestamist.</p>
+        </div>
+        <button onClick={load} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Värskenda</button>
+      </div>
+      {(allowCreate || editingId) && <div id="collective-form" className="mt-4 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-2 lg:grid-cols-4">
+        <Field label="Kollektiivi nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        {!selfOnly && <Field label="Kollektiivijuht" required><select className={inputClass} value={form.leaderUserId} onChange={(e) => setForm({ ...form, leaderUserId: e.target.value })}><option value="">Vali juht</option>{leaders.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}</select></Field>}
+        {!editingId && <Field label="Rahvamaja ja ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.filter((room) => !selfOnly || activeSessionUser?.allowedRoomIds?.includes(room.id)).map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field>}
+        {!editingId && <>
+        <Field label="Proovipäev" required><select className={inputClass} value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>{WEEKDAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></Field>
+        <Field label="Algus" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field>
+        <Field label="Lõpp" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field>
+        <Field label="Graafiku algus" required><input type="date" min={todayISO()} className={inputClass} value={form.scheduleStart} onChange={(e) => setForm({ ...form, scheduleStart: e.target.value })} /></Field>
+        <Field label="Graafiku lõpp" required><input type="date" min={todayISO()} className={inputClass} value={form.scheduleEnd} onChange={(e) => setForm({ ...form, scheduleEnd: e.target.value })} /></Field>
+        </>}
+        {editingId && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 md:col-span-2 lg:col-span-4">Proovide aegu muudad kollektiivi vaatest ühe proovi kaupa. Uus aeg läheb juhatajale või administraatorile kinnitamiseks; seni kehtib vana aeg.</p>}
+        <Field label="Kollektiivi e-post"><input type="email" className={inputClass} value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} placeholder="kontakt@kollektiiv.ee" /></Field>
+        <Field label="Telefon"><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+372 ..." /></Field>
+        <Field label="Koduleht"><input type="url" className={inputClass} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://..." /></Field>
+        <Field label="Sotsiaalmeedia"><input className={inputClass} value={form.socialMedia} onChange={(e) => setForm({ ...form, socialMedia: e.target.value })} placeholder="Facebook või Instagram" /></Field>
+        <Field label="Kirjeldus"><textarea className={`${inputClass} min-h-[90px]`} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Lühike avalik tutvustus" /></Field>
+        <button disabled={busy} onClick={createCollective} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-300 lg:col-span-4">{busy ? 'Salvestan…' : editingId ? 'Salvesta muudatused' : 'Lisa kollektiiv ja proovid'}</button>
+        {editingId && <button type="button" onClick={() => { setEditingId(''); setForm((current) => ({ ...current, name: '', scheduleStart: todayISO(), scheduleEnd: todayISO(), contactEmail: '', phone: '', website: '', socialMedia: '', description: '' })) }} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black lg:col-span-4">Katkesta muutmine</button>}
+      </div>}
+      {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</p>}
+      {message && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900">{message}</p>}
+      {changeRequests.length > 0 && <div className="mt-5 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200"><h3 className="font-black">Andmemuudatused ootel ({changeRequests.length})</h3>
+        {changeRequests.map((change) => <div key={change.id} className="mt-3 rounded-xl bg-white p-3 text-sm ring-1 ring-amber-100"><b>{collectives.find((item) => item.id === change.collectiveId)?.name || 'Kollektiiv'}</b><p className="mt-1">Uus nimi: {change.changes.name} · e-post: {change.changes.contactEmail || 'puudub'} · telefon: {change.changes.phone || 'puudub'}</p>
+          {!selfOnly && <div className="mt-2 flex gap-2"><button disabled={busy} onClick={() => decideChange(change, 'kinnitatud')} className="rounded-xl bg-emerald-700 px-3 py-2 font-bold text-white">Kinnita</button><button disabled={busy} onClick={() => decideChange(change, 'tagasi lükatud')} className="rounded-xl bg-slate-200 px-3 py-2 font-bold">Lükka tagasi</button></div>}</div>)}
+      </div>}
+      <div className="mt-4 grid gap-3">
+        {collectives.map((collective) => {
+          const leader = leaders.find((user) => user.id === collective.leaderUserId)
+          const room = getRoomById(collective.roomId)
+          const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
+          return <article key={collective.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><p className="font-black">{collective.name}</p><p className="text-sm text-slate-600">{leader?.name || collective.leaderEmail} · {room.house} · {room.name}</p><p className="text-xs font-bold text-slate-500">{day} {collective.startTime}–{collective.endTime} · {collective.active ? 'Aktiivne' : 'Peatatud'}</p>{collective.contactEmail && <p className="mt-1 text-xs text-slate-600">{collective.contactEmail}{collective.phone ? ` · ${collective.phone}` : ''}</p>}</div>
+              <div className="flex gap-2"><button onClick={() => onOpenDetail?.({ ...collective, leaderName: leader?.name })} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">Ava kollektiiv →</button>{!selfOnly && <button onClick={() => toggleActive(collective)} className="rounded-xl bg-white px-3 py-2 text-xs font-black ring-1 ring-slate-200">{collective.active ? 'Peata' : 'Aktiveeri'}</button>}</div>
+            </div>
+          </article>
+        })}
+        {!collectives.length && <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 ring-1 ring-slate-200">Kollektiive ei ole veel loodud.</p>}
+      </div>
+    </section>
+  )
+}
+
+function CollectiveDetailView({ collective, onBack, onEdit, bookings, onRefresh }) {
+  const [editingBooking, setEditingBooking] = useState(null)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+  if (!collective) {
+    return <Page><SectionHeader eyebrow="Kollektiiv" title="Kollektiivi ei leitud" text="Valitud kollektiivi andmeid ei õnnestunud laadida." /><button onClick={onBack} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black">Tagasi</button></Page>
+  }
+  const room = getRoomById(collective.roomId)
+  const day = WEEKDAY_OPTIONS.find((item) => item.value === collective.weekday)?.label || collective.weekday
+  const ownBookings = bookings.filter((booking) => booking.instructorId === collective.leaderUserId &&
+    booking.collective === collective.name && String(booking.type || '').toLowerCase().includes('proov') &&
+    !['tühistatud', 'cancelled'].includes(String(booking.status).toLowerCase()))
+    .sort((a, b) => String(a.dateISO || a.date).localeCompare(String(b.dateISO || b.date)))
+  async function submitChange() {
+    if (!editingBooking || saving) return
+    setSaving(true); setError(''); setMessage('')
+    try {
+      await postToAppsScript({ action: 'requestReschedule', bookingId: editingBooking.bookingId,
+        roomId: editingBooking.roomId, date: editingBooking.date,
+        startTime: editingBooking.startTime, endTime: editingBooking.endTime })
+      setEditingBooking(null)
+      setMessage('Uus aeg on saadetud kooskõlastamiseks. Vana aeg kehtib kuni kinnitamiseni.')
+      await onRefresh()
+    } catch (changeError) { setError(changeError.message) } finally { setSaving(false) }
+  }
+  return (
+    <Page>
+      <button onClick={onBack} className="mb-5 rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-800 ring-1 ring-slate-200">← Tagasi kollektiivide juurde</button>
+      <SectionHeader eyebrow="Kollektiiv" title={collective.name} text={collective.description || 'Kollektiivi avalik tutvustus puudub.'} />
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Kontakt ja juhendaja</h2>
+          <div className="mt-4 space-y-2 text-sm text-slate-700">
+            <p><b>Juht:</b> {collective.leaderName || 'Määramata'}</p>
+            <p><b>Juhendaja e-post:</b> {collective.leaderEmail || 'Määramata'}</p>
+            <p><b>Kollektiivi e-post:</b> {collective.contactEmail || 'Määramata'}</p>
+            {collective.phone && <p><b>Telefon:</b> {collective.phone}</p>}
+            {collective.website && <p><b>Koduleht:</b> {collective.website}</p>}
+            {collective.socialMedia && <p><b>Sotsiaalmeedia:</b> {collective.socialMedia}</p>}
+          </div>
+        </section>
+        <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Proovigraafik</h2>
+          <div className="mt-4 space-y-2 text-sm text-slate-700">
+            <p><b>Koht:</b> {room.house} · {room.name}</p>
+            <p><b>Aeg:</b> {day} {collective.startTime}–{collective.endTime}</p>
+            <p><b>Staatus:</b> {collective.active ? 'Aktiivne' : 'Peatatud'}</p>
+          </div>
+        </section>
+      </div>
+      <button onClick={() => onEdit?.(collective)} className="mt-5 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Muuda kollektiivi andmeid</button>
+      <section className="mt-6 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <h2 className="text-xl font-black">Proovid kalendris</h2>
+        <p className="mt-2 text-sm text-slate-600">Iga proov on seotud üldise ruumikalendriga. Aja muutmisel kontrollitakse vaba ruumi ning uus aeg ootab kooskõlastust.</p>
+        {error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+        {message && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{message}</p>}
+        <div className="mt-4 space-y-3">{ownBookings.map((booking) => <div key={booking.bookingId} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><b>{booking.dateISO || booking.date} · {booking.startTime}–{booking.endTime}</b><p className="text-sm text-slate-600">{booking.house} · {booking.roomName} · {booking.status}</p></div>
+            {booking.type !== 'Prooviaja muudatus' && (booking.dateISO || booking.date) >= todayISO() && <button onClick={() => { setError(''); setEditingBooking({ bookingId: booking.bookingId, roomId: booking.roomId, date: booking.dateISO || booking.date, startTime: booking.startTime, endTime: booking.endTime }) }} className="rounded-xl bg-white px-4 py-2 text-sm font-bold ring-1 ring-slate-200">Muuda aega</button>}</div>
+          {editingBooking?.bookingId === booking.bookingId && <div className="mt-3 grid gap-2 md:grid-cols-4">
+            <Field label="Kuupäev"><input type="date" min={todayISO()} className={inputClass} value={editingBooking.date} onChange={(e) => setEditingBooking({ ...editingBooking, date: e.target.value })} /></Field>
+            <Field label="Ruum"><select className={inputClass} value={editingBooking.roomId} onChange={(e) => setEditingBooking({ ...editingBooking, roomId: e.target.value })}>{rentalRooms.filter((item) => activeSessionUser?.role !== 'collective' || activeSessionUser.allowedRoomIds?.includes(item.id)).map((item) => <option key={item.id} value={item.id}>{item.house} · {item.name}</option>)}</select></Field>
+            <Field label="Algus"><input type="time" className={inputClass} value={editingBooking.startTime} onChange={(e) => setEditingBooking({ ...editingBooking, startTime: e.target.value })} /></Field>
+            <Field label="Lõpp"><input type="time" className={inputClass} value={editingBooking.endTime} onChange={(e) => setEditingBooking({ ...editingBooking, endTime: e.target.value })} /></Field>
+            <button disabled={saving} onClick={submitChange} className="rounded-xl bg-emerald-700 p-3 font-bold text-white disabled:opacity-50">Saada kinnitamiseks</button>
+            <button onClick={() => setEditingBooking(null)} className="rounded-xl bg-slate-200 p-3 font-bold">Katkesta</button>
+          </div>}
+        </div>)}
+        {!ownBookings.length && <p className="text-sm text-slate-600">Selle kollektiivi tulevasi proovikirjeid ei ole laaditud.</p>}</div>
+      </section>
+    </Page>
+  )
+}
+
+function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bookings, setBookings, refreshData, setSheetUsages, onOpenCollectiveDetail, editCollective, onEditHandled }) {
   const role = roles.find((r) => r.id === selectedRole)
   const pending = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'pending')
   const confirmed = bookings.filter((item) => normalizeStatusForCalendar(item.status) === 'published')
+  const [section, setSection] = useState('bookings')
+  const [sectionHistory, setSectionHistory] = useState([])
+  function openSection(next) {
+    if (next !== section) setSectionHistory((history) => [...history, section])
+    setSection(next)
+  }
+  useEffect(() => { if (editCollective) setSection('collectives') }, [editCollective])
   const [tab, setTab] = useState('pending')
   const visible = tab === 'pending' ? pending : confirmed
+  const sections = [
+    { id: 'bookings', label: 'Broneeringud', detail: `${pending.length} ootel` },
+    { id: 'usage', label: 'Lisa ruumikasutus', detail: 'Uus kirje' },
+    { id: 'collectives', label: 'Kollektiivid', detail: 'Vaata ja muuda' },
+    { id: 'users', label: 'Kasutajad', detail: 'Kontod ja õigused' }
+  ]
 
   function updateLocalBooking(id, changes) {
     setBookings((current) => current.map((item) => (String(item.bookingId || item.id) === String(id) ? { ...item, ...changes } : item)))
@@ -1563,9 +1907,23 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
   }
 
   async function cancel(booking) {
-    const id = booking.bookingId || booking.id
+    const id = String(booking.bookingId || booking.id || '').trim()
+    if (!id) {
+      window.alert('Tühistamine ebaõnnestus: broneeringu ID puudub.')
+      return
+    }
+
     try {
       await postToAppsScript({ action: 'updateStatus', bookingId: id, status: 'tühistatud', publicTitle: booking.publicTitle || 'Ruum broneeritud' })
+      updateLocalBooking(id, { status: 'tühistatud' })
+      await refreshData()
+    } catch (error) { window.alert(error.message) }
+  }
+
+  async function cancelSeries(seriesId) {
+    if (!window.confirm(`Kas tühistada kogu seeria ${seriesId}?`)) return
+    try {
+      await postToAppsScript({ action: 'cancelSeries', seriesId })
       await refreshData()
     } catch (error) { window.alert(error.message) }
   }
@@ -1588,40 +1946,58 @@ function AdminView({ setView, selectedRole, events, activities, bookings, setBoo
   return (
     <Page>
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <SectionHeader eyebrow="Sisuhaldus" title={`Töölaud: ${role?.label || ''}`} text="Sisselogitud töötaja saab broneeringuid kinnitada. Kinnitamisel muutub kirje avalikus ruumikalendris kohe nähtavaks." />
+        <SectionHeader eyebrow="Töötaja töölaud" title={role?.label || 'Töölaud'} text="Vali tegevus allpool. Ootel broneeringu kinnitamisel ilmub see avalikku ruumikalendrisse." />
         <button onClick={refreshData} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-200">Värskenda andmeid</button>
       </div>
-      <div className="grid gap-5 md:grid-cols-4">
-        <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Ootel</p><p className="mt-2 text-4xl font-black">{pending.length}</p></div>
-        <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Kinnitatud</p><p className="mt-2 text-4xl font-black">{confirmed.length}</p></div>
-        <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Avalikke sündmusi</p><p className="mt-2 text-4xl font-black">{events.filter(e => e.displayMode === 'full').length}</p></div>
-        <div className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-sm font-bold text-slate-500">Ringe</p><p className="mt-2 text-4xl font-black">{activities.length}</p></div>
-      </div>
-      <UserManagement role={selectedRole} />
-      <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} onCreated={handleAdminUsageCreated} refreshData={refreshData} />
-      <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <nav aria-label="Töölaua jaotised" className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {sections.map((item) => (
+          <button key={item.id} type="button" onClick={() => openSection(item.id)} aria-current={section === item.id ? 'page' : undefined} className={cx('rounded-2xl p-4 text-left ring-1 transition-colors', section === item.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-800 ring-slate-200 hover:bg-emerald-50')}>
+            <span className="block font-black">{item.label}</span>
+            <span className={cx('mt-1 block text-sm', section === item.id ? 'text-emerald-50' : 'text-slate-500')}>{item.detail}</span>
+          </button>
+        ))}
+      </nav>
+      {sectionHistory.length > 0 && <button type="button" onClick={() => { setSection(sectionHistory[sectionHistory.length - 1]); setSectionHistory(sectionHistory.slice(0, -1)) }} className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-800 ring-1 ring-slate-200">← Tagasi eelmise jaotise juurde</button>}
+      {section === 'users' && <UserManagement role={selectedRole} />}
+      {section === 'collectives' && <CollectiveManagement allowCreate={false} onOpenDetail={onOpenCollectiveDetail} editCollective={editCollective} onEditHandled={onEditHandled} />}
+      {section === 'usage' && <AdminUsageForm selectedRole={selectedRole} events={events} activities={activities} roomDayIndex={roomDayIndex} onCreated={handleAdminUsageCreated} refreshData={refreshData} />}
+      {section === 'bookings' && <section className="mt-6 rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-black">Broneeringud</h2>
           <div className="flex gap-2">
-            <button onClick={() => setTab('pending')} className={cx('rounded-xl px-4 py-2 text-sm font-black ring-1', tab === 'pending' ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200')}>Ootel</button>
-            <button onClick={() => setTab('confirmed')} className={cx('rounded-xl px-4 py-2 text-sm font-black ring-1', tab === 'confirmed' ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200')}>Kinnitatud</button>
+            <button onClick={() => setTab('pending')} aria-pressed={tab === 'pending'} className={cx('rounded-xl px-4 py-2 text-sm font-black ring-1', tab === 'pending' ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200')}>Ootel ({pending.length})</button>
+            <button onClick={() => setTab('confirmed')} aria-pressed={tab === 'confirmed'} className={cx('rounded-xl px-4 py-2 text-sm font-black ring-1', tab === 'confirmed' ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200')}>Kinnitatud ({confirmed.length})</button>
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          {visible.length ? visible.map((booking) => <AdminBookingCard key={booking.bookingId || booking.id} booking={booking} onApprove={approve} onCancel={cancel} onUpdatePublicTitle={updatePublicTitle} />) : <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 ring-1 ring-slate-200">Selles vaates ei ole kirjeid.</p>}
+          {visible.length ? visible.map((booking) => <AdminBookingCard key={booking.bookingId || booking.id} booking={booking} onApprove={approve} onCancel={cancel} onCancelSeries={cancelSeries} onUpdatePublicTitle={updatePublicTitle} />) : <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 ring-1 ring-slate-200">Selles vaates ei ole kirjeid.</p>}
         </div>
-      </section>
+      </section>}
       <button onClick={() => setView('home')} className="mt-5 rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi avalehele</button>
     </Page>
   )
 }
 
 export default function App() {
-  const [view, setView] = useState('home')
+  const [view, setViewState] = useState('home')
+  const [viewHistory, setViewHistory] = useState([])
+  function setView(next) {
+    if (view !== next) setViewHistory((history) => [...history, view])
+    setViewState(next)
+  }
+  function goBack() {
+    if (!viewHistory.length) return
+    const previous = viewHistory[viewHistory.length - 1]
+    setViewState(!activeSessionToken && ['admin', 'instructor', 'collectiveDetail'].includes(previous) ? 'login' : previous)
+    setViewHistory(viewHistory.slice(0, -1))
+  }
   const [staffRole, setStaffRole] = useState(null)
   const [staffUser, setStaffUser] = useState(null)
   const [selectedRoomId, setSelectedRoomId] = useState(rentalRooms[0].id)
   const [selectedEventId, setSelectedEventId] = useState(null)
+  const [selectedCollective, setSelectedCollective] = useState(null)
+  const [editCollective, setEditCollective] = useState(null)
+  const [collectiveDetailOrigin, setCollectiveDetailOrigin] = useState('admin')
   const [bookingDraft, setBookingDraft] = useState(null)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false)
   const [sheetUsages, setSheetUsages] = useState([])
@@ -1657,7 +2033,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (view === 'admin' && isAdminUnlocked) refreshData()
+    if ((view === 'admin' || view === 'instructor' || view === 'collectiveDetail') && activeSessionToken) refreshData()
   }, [view, isAdminUnlocked])
 
   function handleBookingCreated(booking) {
@@ -1693,7 +2069,8 @@ export default function App() {
   }, [sheetUsages, bookings])
   const sheetEvents = useMemo(() => combinedSheetUsages.map(bookingToCalendarEvent).filter((item) => item && ['published', 'pending'].includes(item.status)), [combinedSheetUsages])
   const events = useMemo(() => sheetEvents, [sheetEvents])
-  const activities = []
+  const activities = useMemo(() => [], [])
+  const roomDayIndex = useMemo(() => buildRoomDayIndex(events, activities), [events, activities])
   const selectedEvent = useMemo(() => events.find((event) => String(event.id) === String(selectedEventId)), [events, selectedEventId])
 
   function openEventDetails(event) {
@@ -1701,11 +2078,17 @@ export default function App() {
     setView('eventDetail')
   }
 
+  function openCollectiveDetail(collective) {
+    setSelectedCollective(collective)
+    setCollectiveDetailOrigin(view === 'instructor' ? 'instructor' : 'admin')
+    setView('collectiveDetail')
+  }
+
   return (
     <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} isAdminUnlocked={isAdminUnlocked} staffRole={staffRole} />
       {isAdminUnlocked && <div className="mx-auto flex max-w-7xl items-center justify-end gap-3 px-4 py-2 text-sm">
-        <span>{roles.find(role => role.id === staffRole)?.label}</span>
+        <span>{staffUser?.name} · {roles.find(role => role.id === staffRole)?.label}</span>
         <button className="rounded-xl bg-slate-100 px-4 py-3 font-bold" onClick={async () => {
           const token = activeSessionToken
           try { if (token) await postToAppsScript({ action: 'logout', sessionToken: token }) } catch (error) {}
@@ -1716,24 +2099,26 @@ export default function App() {
           setStaffUser(null)
           setInstructorSession(null)
           setBookings([])
+          setViewHistory([])
           setView('home')
           refreshData()
         }}>Logi välja</button>
       </div>}
-      <div className="mx-auto max-w-7xl px-4 pt-3 text-xs font-bold text-slate-500 md:px-8">{dataStatus}</div>
+      <div className="mx-auto max-w-7xl px-4 pt-3 text-xs font-bold text-slate-500 md:px-8">{viewHistory.length > 0 && <button type="button" onClick={goBack} className="mb-3 mr-3 rounded-xl bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">← Tagasi</button>}{dataStatus}</div>
       {view === 'home' && <HomeView setView={setView} events={events} openEventDetails={openEventDetails} />}
       {view === 'events' && <EventsView events={events} openEventDetails={openEventDetails} />}
       {view === 'eventDetail' && <EventDetailView event={selectedEvent} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
       {view === 'availability' && <AvailabilityView events={events} activities={activities} setView={setView} setSelectedRoomId={setSelectedRoomId} />}
-      {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} setView={setView} setBookingDraft={setBookingDraft} />}
+      {view === 'roomDetail' && <RoomDetailView selectedRoomId={selectedRoomId} setSelectedRoomId={setSelectedRoomId} events={events} activities={activities} roomDayIndex={roomDayIndex} setView={setView} setBookingDraft={setBookingDraft} />}
       {view === 'booking' && !calendarReady && <Page><p role="alert">Ruumikalender ei ole saadaval. Palun proovi hiljem uuesti või kirjuta rahvamajale.</p></Page>}
-      {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
+      {view === 'booking' && calendarReady && <BookingView key={`${bookingDraft?.roomId || 'default'}-${bookingDraft?.date || 'date'}-${bookingDraft?.startTime || 'start'}-${bookingDraft?.endTime || 'end'}`} events={events} activities={activities} roomDayIndex={roomDayIndex} initialDraft={bookingDraft} onBookingCreated={handleBookingCreated} />}
       {view === 'activities' && <ActivitiesView activities={activities} />}
       {view === 'houses' && <HousesView />}
       {view === 'contact' && <ContactView />}
-      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} />}
+      {view === 'instructor' && <InstructorView setView={setView} events={events} activities={activities} roomDayIndex={roomDayIndex} onUsageCreated={handleUsageCreated} initialInstructor={instructorSession} clearInstructorSession={() => setInstructorSession(null)} onOpenCollectiveDetail={openCollectiveDetail} editCollective={editCollective} onEditHandled={() => setEditCollective(null)} />}
       {view === 'login' && <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />}
-      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'admin' && (isAdminUnlocked ? <AdminView setView={setView} selectedRole={staffRole} staffUser={staffUser} events={events} activities={activities} roomDayIndex={roomDayIndex} bookings={bookings} setBookings={setBookings} refreshData={refreshData} setSheetUsages={setSheetUsages} onOpenCollectiveDetail={openCollectiveDetail} editCollective={editCollective} onEditHandled={() => setEditCollective(null)} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
+      {view === 'collectiveDetail' && (activeSessionToken ? <CollectiveDetailView collective={selectedCollective} bookings={bookings} onRefresh={refreshData} onBack={goBack} onEdit={(collective) => { setEditCollective(collective); setView(collectiveDetailOrigin) }} /> : <LoginView setStaffRole={setStaffRole} setStaffUser={setStaffUser} setView={setView} setIsAdminUnlocked={setIsAdminUnlocked} setInstructorSession={setInstructorSession} />)}
       <MobileNav view={view} setView={setView} />
     </div>
   )
