@@ -43,6 +43,49 @@ const ROOM_CONFIG = {
 
 const SHEET_ID = '15eeMfVjiQzbrEVTgstIcEykaj6sSy3f9-hnNAv6yx3I'
 const SHEET_NAME = 'Broneeringud'
+const CONTENT_SHEET_NAME = 'Avalik sisu'
+const CONTENT_HEADERS = ['Liik', 'ID', 'Kirjeldus', 'Pildi URL', 'Pildi kirjeldus', 'Lingi URL', 'Muudetud']
+
+function contentSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID)
+  let sheet = ss.getSheetByName(CONTENT_SHEET_NAME)
+  if (!sheet) sheet = ss.insertSheet(CONTENT_SHEET_NAME)
+  if (!sheet.getLastRow()) { sheet.appendRow(CONTENT_HEADERS); sheet.setFrozenRows(1) }
+  return sheet
+}
+
+function listPublicContent_() {
+  const values = contentSheet_().getDataRange().getValues()
+  return { ok: true, content: values.slice(1).filter(row => row[0] && row[1]).map(row => ({
+    type: String(row[0]), id: String(row[1]), description: String(row[2] || ''),
+    imageUrl: String(row[3] || ''), imageAlt: String(row[4] || ''), linkUrl: String(row[5] || '')
+  })) }
+}
+
+function savePublicContent_(payload) {
+  requireManager_(payload.sessionToken)
+  const type = String(payload.type || '')
+  const id = String(payload.id || '')
+  const collectiveRows = type === 'collective' ? collectiveRows_() : null
+  const validCollective = collectiveRows && collectiveRows.values.slice(1).some(row =>
+    String(row[collectiveRows.map['Kollektiivi ID']]) === id)
+  if (!((type === 'house' && ['konguta', 'rannu'].includes(id)) ||
+    (type === 'room' && Object.prototype.hasOwnProperty.call(ROOM_CONFIG, id)) || validCollective)) throw new Error('Tundmatu rahvamaja, ruum või kollektiiv.')
+  const description = String(payload.description || '').trim()
+  const imageUrl = String(payload.imageUrl || '').trim()
+  const imageAlt = String(payload.imageAlt || '').trim()
+  const linkUrl = String(payload.linkUrl || '').trim()
+  if (description.length > 2000 || imageAlt.length > 200) throw new Error('Tekst on liiga pikk.')
+  if (imageUrl && !/^https:\/\/[^\s<>"']+$/i.test(imageUrl)) throw new Error('Pilt peab olema turvalise HTTPS-aadressiga.')
+  if (linkUrl && !/^https:\/\/[^\s<>"']+$/i.test(linkUrl)) throw new Error('Link peab olema turvalise HTTPS-aadressiga.')
+  const sheet = contentSheet_()
+  const values = sheet.getDataRange().getValues()
+  const index = values.findIndex((row, i) => i > 0 && row[0] === type && row[1] === id)
+  const row = [type, id, safeCell_(description), imageUrl, safeCell_(imageAlt), linkUrl, new Date()]
+  if (index > 0) sheet.getRange(index + 1, 1, 1, CONTENT_HEADERS.length).setValues([row])
+  else sheet.appendRow(row)
+  return { ok: true }
+}
 
 const DEFAULT_EMAIL = 'meeliskylaots@gmail.com'
 const RANNU_EMAIL = 'meeliskylaots@gmail.com'
@@ -97,7 +140,9 @@ const USER_HEADERS = [
   'Parooli muutmise aeg'
 ]
 const PASSWORD_ITERATIONS = 150000
-const SESSION_TTL_SECONDS = 2 * 60 * 60
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+const SESSION_SHEET_NAME = 'Seansid'
+const SESSION_HEADERS = ['Tokeni räsi', 'Kasutaja ID', 'Loodud', 'Kehtib kuni', 'Tühistatud']
 const CHALLENGE_TTL_SECONDS = 5 * 60
 const LOCKOUT_THRESHOLD = 5
 const LOCKOUT_SECONDS = 15 * 60
@@ -249,8 +294,35 @@ function userCount_() {
   return values.slice(1).filter((row) => String(row[headerMap_(headers)['Kasutaja ID']] || '').trim()).length
 }
 
-function sessionCacheKey_(token) {
-  return 'kp:session:' + String(token || '')
+function sessionsSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID)
+  let sheet = ss.getSheetByName(SESSION_SHEET_NAME)
+  if (!sheet) sheet = ss.insertSheet(SESSION_SHEET_NAME)
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(SESSION_HEADERS)
+    sheet.setFrozenRows(1)
+  }
+  return sheet
+}
+
+function sessionHash_(token) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8)
+    .map((byte) => (byte & 255).toString(16).padStart(2, '0')).join('')
+}
+
+function sessionRecord_(token) {
+  if (!token || !/^[A-Za-z0-9_-]{32,128}$/.test(String(token))) return null
+  const hash = sessionHash_(token)
+  const rows = sessionsSheet_().getDataRange().getValues()
+  for (let index = rows.length - 1; index > 0; index--) {
+    if (constantTimeEqual_(String(rows[index][0]), hash)) return { rowNumber: index + 1, values: rows[index] }
+  }
+  return null
+}
+
+function revokeSession_(token) {
+  const record = sessionRecord_(token)
+  if (record && !record.values[4]) sessionsSheet_().getRange(record.rowNumber, 5).setValue(new Date())
 }
 
 function challengeCacheKey_(id) {
@@ -262,12 +334,12 @@ function operationCacheKey_(id) {
 }
 
 function sessionUser_(token) {
-  const raw = token ? CacheService.getScriptCache().get(sessionCacheKey_(token)) : null
-  if (!raw) return null
+  const record = sessionRecord_(token)
+  if (!record || record.values[4] || new Date(record.values[3]).getTime() <= Date.now()) return null
   try {
-    const session = JSON.parse(raw)
-    const user = findUserById_(session.userId)
+    const user = findUserById_(record.values[1])
     if (!user || !user.active) return null
+    if (user.passwordChangedAt && new Date(user.passwordChangedAt).getTime() > new Date(record.values[2]).getTime()) return null
     return { ...user, token: String(token) }
   } catch (error) {
     return null
@@ -335,11 +407,8 @@ function authLogin_(email, challengeId, proof) {
     return { ok: false, error: lockedUntil ? 'Liiga palju ebaõnnestunud katseid. Proovi 15 minuti pärast uuesti.' : 'E-post või parool ei sobi.' }
   }
   const token = randomToken_()
-  CacheService.getScriptCache().put(
-    sessionCacheKey_(token),
-    JSON.stringify({ userId: user.id }),
-    SESSION_TTL_SECONDS
-  )
+  const now = new Date()
+  sessionsSheet_().appendRow([sessionHash_(token), user.id, now, new Date(now.getTime() + SESSION_TTL_SECONDS * 1000), ''])
   updateUserSecurity_(user, map, sheet, { 'Ebaõnnestunud katsed': 0, 'Blokeeritud kuni': '', 'Viimane sisselogimine': new Date() })
   const fresh = findUserById_(user.id)
   return { ok: true, sessionToken: token, expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000, user: publicUser_(fresh) }
@@ -862,11 +931,16 @@ function doGet(e) {
   try {
     if (action === 'authChallenge') data = authChallenge_(params.email)
     else if (action === 'authLogin') data = authLogin_(params.email, params.challengeId, params.proof)
+    else if (action === 'authSession') {
+      const user = sessionUser_(params.session)
+      data = user ? { ok: true, user: publicUser_(user) } : { ok: false, error: 'Seanss on aegunud. Logi uuesti sisse.' }
+    }
     else if (action === 'bootstrapStatus') data = bootstrapStatus_()
     else if (action === 'list') data = listBookings_(params.session)
     else if (action === 'listUsers') data = listUsers_(params.session)
     else if (action === 'listCollectives') data = listCollectives_(params.session)
     else if (action === 'listPublicCollectives') data = listPublicCollectives_()
+    else if (action === 'listPublicContent') data = listPublicContent_()
     else if (action === 'listCollectiveChanges') data = listCollectiveChanges_(params.session)
     else if (action === 'operationStatus') data = operationStatus_(params.requestId, params.session)
     else data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
@@ -903,6 +977,8 @@ function doPost(e) {
       result = updateCollective_(payload)
     } else if (payload.action === 'saveCollectiveInfo') {
       result = saveCollectiveInfo_(payload)
+    } else if (payload.action === 'savePublicContent') {
+      result = savePublicContent_(payload)
     } else if (payload.action === 'importCollectiveInfo') {
       result = importCollectiveInfo_(payload)
     } else if (payload.action === 'requestCollectiveUpdate') {
@@ -915,7 +991,7 @@ function doPost(e) {
       result = manageUser_(payload)
     } else if (payload.action === 'logout') {
       const user = sessionUser_(payload.sessionToken)
-      if (payload.sessionToken) CacheService.getScriptCache().remove(sessionCacheKey_(payload.sessionToken))
+      revokeSession_(payload.sessionToken)
       result = { ok: true, userId: user?.id || '' }
     } else if (payload.action === 'bootstrapUser') {
       result = bootstrapUser_(payload)
