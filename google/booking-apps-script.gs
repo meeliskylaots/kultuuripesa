@@ -1023,6 +1023,8 @@ function doPost(e) {
     } else if (payload.action === 'createUsage') {
       delete payload.__rescheduleTarget
       result = createUsage_(payload)
+    } else if (payload.action === 'createUsageSeries') {
+      result = createUsageSeries_(payload)
     } else if (payload.action === 'createUser') {
       result = createUser_(payload)
     } else if (payload.action === 'createCollective') {
@@ -1090,8 +1092,8 @@ function validateRoomTime_(payload) {
   payload.reservedEndTime = format(Math.min(1440, end + room.bufferAfterMinutes))
 }
 
-function assertRoomAvailable_(payload, excludeId) {
-  const bookings = listBookings_().usages
+function assertRoomAvailable_(payload, excludeId, usageSnapshot) {
+  const bookings = Array.isArray(usageSnapshot) ? usageSnapshot : listBookings_().usages
   const excludedIds = (Array.isArray(excludeId) ? excludeId : [excludeId]).map(String)
   const isKonguta = String(payload.roomId || '').startsWith('konguta-')
   const toMinutes = (time) => Number(String(time || '').slice(0, 2)) * 60 + Number(String(time || '').slice(3, 5))
@@ -1185,7 +1187,7 @@ function createBooking_(payload) {
   return { ok: true, bookingId, message: 'Broneeringusoov saadeti edukalt.' }
 }
 
-function createUsage_(payload) {
+function createUsage_(payload, usageSnapshot) {
   const actor = requireSession_(payload.sessionToken)
   if (actor.role === 'collective') {
     if (!actor.allowedRoomIds.includes(String(payload.roomId || ''))) throw new Error('Selle ruumi kasutamiseks puudub õigus.')
@@ -1216,7 +1218,7 @@ function createUsage_(payload) {
   const missing = requiredFields.filter(field => !payload[field])
   if (missing.length > 0) throw new Error('Puuduvad kohustuslikud väljad: ' + missing.join(', '))
   validateRoomTime_(payload)
-  assertRoomAvailable_(payload, payload.__rescheduleTarget || '')
+  assertRoomAvailable_(payload, payload.__rescheduleTarget || '', usageSnapshot)
 
   const sheet = getOrCreateSheet_()
   const headers = ensureHeader_(sheet)
@@ -1276,6 +1278,60 @@ function createUsage_(payload) {
   return { ok: true, bookingId: usageId, message: 'Sisestus saadeti kinnitamiseks.' }
 }
 
+
+function createUsageSeries_(payload) {
+  requireManager_(payload.sessionToken)
+  const roomId = String(payload.roomId || '')
+  if (!roomId.startsWith('konguta-')) throw new Error('Korduva kirjete lisamine on saadaval ainult Konguta ruumides.')
+  const dates = Array.isArray(payload.dates) ? payload.dates.map((date) => String(date || '').trim()) : []
+  if (dates.length < 1 || dates.length > 26) throw new Error('Lisa korraga 1–26 kalendrikirjet.')
+  if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) throw new Error('Mõni kuupäev ei sobi.')
+  if (new Set(dates).size !== dates.length) throw new Error('Korduvate kirjete kuupäevad peavad olema erinevad.')
+
+  const seriesId = String(payload.seriesId || '').trim() || (dates.length > 1 ? 'KRM-' + Utilities.getUuid() : '')
+  const shared = { ...payload, action: 'createUsage', status: 'kinnitatud', seriesId, suppressStaffEmail: true }
+  delete shared.dates
+  delete shared.requestId
+  delete shared.items
+
+  // Kontrolli kogu seeriat enne ühegi rea lisamist. Scripti lukustus välistab
+  // samaaegse teise salvestuse; korduvatel nädalatel on kuupäevad unikaalsed.
+  const existing = listBookings_().usages
+  const entries = dates.map((date) => ({ ...shared, date }))
+  entries.forEach((entry) => {
+    validateRoomTime_(entry)
+    try {
+      assertRoomAvailable_(entry, '', existing)
+    } catch (error) {
+      throw new Error(entry.date + ': ' + error.message)
+    }
+  })
+
+  const known = existing.slice()
+  const bookingIds = []
+  for (const entry of entries) {
+    const result = createUsage_(entry, known)
+    bookingIds.push(result.bookingId)
+    known.push({
+      roomId: entry.roomId, date: entry.date,
+      startTime: entry.startTime, endTime: entry.endTime,
+      reservedStartTime: entry.reservedStartTime, reservedEndTime: entry.reservedEndTime,
+      bookingId: result.bookingId
+    })
+  }
+
+  try {
+    MailApp.sendEmail({
+      to: DEFAULT_EMAIL,
+      subject: `Kalendrisse lisati ${entries.length} kasutust: ${escapeHtml_(payload.collective || payload.publicTitle || 'üritus')}`,
+      htmlBody: `<p>Kalendrisse lisati ${entries.length} Konguta ruumikasutust ajavahemikule ${escapeHtml_(dates[0])}–${escapeHtml_(dates[dates.length - 1])}.</p><p>${escapeHtml_(payload.collective || payload.publicTitle || 'Üritus')} · ${escapeHtml_(payload.startTime || '')}–${escapeHtml_(payload.endTime || '')}</p>`,
+      name: ORGANIZATION_NAME
+    })
+  } catch (error) {
+    // Teavituse ebaõnnestumine ei muuda juba salvestatud kirjete tulemust.
+  }
+  return { ok: true, count: bookingIds.length, bookingIds, seriesId }
+}
 
 function createUsageId_() {
   const now = new Date()
