@@ -453,25 +453,25 @@ function Header({ view, setView, isAdminUnlocked, staffRole }) {
   const staffLabel = isAdminUnlocked && staffRole ? 'Töölaud' : 'Töötajale'
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
-        <button onClick={() => setView('home')} className="flex items-center gap-3 text-left">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-700 text-lg font-black text-white">KP</div>
+        <button onClick={() => setView('home')} className="flex items-center gap-3 text-left" aria-label="Kultuuripesa avaleht">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-900 text-sm font-black text-white">KP</div>
           <div>
-            <p className="font-black leading-tight text-slate-950">Kultuuripesa</p>
-            <p className="text-xs font-semibold text-slate-500">rahvamajad</p>
+            <p className="font-black leading-tight text-blue-950">Kultuuripesa</p>
+            <p className="text-xs font-semibold text-slate-500">Konguta · Rannu</p>
           </div>
         </button>
         <nav className="hidden items-center gap-5 text-sm font-bold text-slate-700 lg:flex">
           {nav.map(([id, label]) => (
-            <button key={id} onClick={() => setView(id)} className={cx('hover:text-emerald-700', (view === id || (id === 'availability' && ['roomDetail', 'booking'].includes(view))) && 'text-emerald-700')}>{label}</button>
+            <button key={id} onClick={() => setView(id)} aria-current={view === id ? 'page' : undefined} className={cx('hover:text-blue-700', (view === id || (id === 'availability' && ['roomDetail', 'booking'].includes(view))) && 'text-blue-700')}>{label}</button>
           ))}
         </nav>
-        <button onClick={() => setView(staffView)} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100 md:hidden">{staffLabel}</button>
+        <button onClick={() => setView(staffView)} className="rounded-xl bg-white px-3 py-2 text-sm font-black text-blue-900 ring-1 ring-slate-200 md:hidden">{staffLabel}</button>
         <div className="hidden gap-2 md:flex">
-          <button onClick={() => setView(staffView)} className="rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">{staffLabel}</button>
+          <button onClick={() => setView(staffView)} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">{staffLabel}</button>
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-200">Vaata sündmusi</button>
-          <button onClick={() => setView('availability')} className="rounded-2xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800">Broneeri ruum</button>
+          <button onClick={() => setView('availability')} className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800">Broneeri ruum</button>
         </div>
       </div>
     </header>
@@ -480,34 +480,34 @@ function Header({ view, setView, isAdminUnlocked, staffRole }) {
 
 function MobileNav({ view, setView }) {
   const nav = [
-    ['events', 'Sündmused', '📅'],
-    ['availability', 'Ruumid', '🏠'],
-    ['activities', 'Ringid', '🎭'],
-    ['contact', 'Kontakt', '☎']
+    ['home', 'Avaleht', '⌂'],
+    ['events', 'Sündmused', '▦'],
+    ['availability', 'Ruumid', '□'],
+    ['booking', 'Broneeri', '+']
   ]
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 p-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
+    <nav aria-label="Peamenüü" className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.15)] md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
         {nav.map(([id, label, icon]) => (
-          <button key={id} onClick={() => setView(id)} className={cx('rounded-2xl px-2 py-2 text-center text-xs font-black', view === id ? 'bg-emerald-700 text-white' : 'text-slate-700')}>
-            <span className="block text-base leading-5">{icon}</span>
+          <button key={id} onClick={() => setView(id)} aria-current={view === id ? 'page' : undefined} className={cx('rounded-xl px-2 py-2 text-center text-xs font-bold', view === id || (id === 'availability' && view === 'roomDetail') ? 'bg-blue-50 text-blue-900' : 'text-slate-500')}>
+            <span aria-hidden="true" className="block text-xl leading-6">{icon}</span>
             {label}
           </button>
         ))}
       </div>
-    </div>
+    </nav>
   )
 }
 
 function Page({ children }) {
-  return <main className="mx-auto max-w-7xl px-4 pb-28 pt-8 md:px-8 md:pb-14">{children}</main>
+  return <main className="mx-auto max-w-7xl px-4 pb-28 pt-6 md:px-8 md:pb-14 md:pt-10">{children}</main>
 }
 
 function SectionHeader({ eyebrow, title, text, compact = false }) {
   return (
     <div className={cx('max-w-3xl', compact ? 'mb-4' : 'mb-7')}>
-      {eyebrow && <p className="mb-2 text-sm font-black uppercase tracking-[0.18em] text-emerald-700">{eyebrow}</p>}
-      <h1 className="text-3xl font-black tracking-tight text-slate-950 md:text-5xl">{title}</h1>
+      {eyebrow && <p className="mb-2 text-sm font-black uppercase tracking-[0.12em] text-blue-700">{eyebrow}</p>}
+      <h1 className="text-3xl font-black tracking-tight text-blue-950 md:text-5xl">{title}</h1>
       {text && <p className="mt-3 text-base leading-7 text-slate-600 md:text-lg">{text}</p>}
     </div>
   )
@@ -528,33 +528,36 @@ function HomeView({ setView, events, openEventDetails }) {
   const upcoming = events.filter((event) => event.status === 'published' && event.public && event.displayMode === 'full').slice(0, 3)
   return (
     <Page>
-      <section className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
-        <div>
-          <p className="mb-4 inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Kohalik kultuurielu ühest kohast</p>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-6xl">Kohalik kultuurielu ühest kohast.</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Vaata sündmusi, broneeri rahvamaja ruume ja leia üles kohalikud ringid, kollektiivid ning kogukonnategevused.</p>
+      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="rounded-2xl bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 px-6 py-9 text-white shadow-sm md:px-10 md:py-12">
+          <p className="text-sm font-bold text-blue-100">Konguta ja Rannu rahvamajad</p>
+          <h1 className="mt-3 max-w-2xl text-3xl font-black tracking-tight md:text-5xl">Kohalik kultuurielu ühest kohast.</h1>
+          <p className="mt-4 max-w-xl text-base leading-7 text-blue-50 md:text-lg">Vaata sündmusi, leia kollektiiv või vali oma sündmuse jaoks sobiv ruum.</p>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <button onClick={() => setView('events')} className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-blue-900 hover:bg-blue-50">Vaata sündmusi</button>
+            <button onClick={() => setView('availability')} className="rounded-xl border border-white/70 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">Broneeri ruum</button>
+          </div>
         </div>
-        <div className="rounded-[2rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-100 via-white to-amber-50 p-5">
-            <h2 className="mb-4 text-xl font-black">Mida soovid teha?</h2>
-            <div className="grid gap-3">
-              <button onClick={() => setView('events')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Vaadata sündmusi</b><span className="block text-sm text-slate-500">Kontserdid, töötoad ja kogukonnaüritused</span></span><span>→</span></button>
-              <button onClick={() => setView('availability')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Broneerida ruum</b><span className="block text-sm text-slate-500">Vali ruum, vaata vaba aega ja saada broneeringusoov</span></span><span>→</span></button>
-              <button onClick={() => setView('activities')} className="flex items-center justify-between rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-white hover:bg-slate-50"><span><b>Kohalik kultuurielu</b><span className="block text-sm text-slate-500">Ringid, kollektiivid ja rahvamajade tegemised</span></span><span>→</span></button>
-            </div>
+        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 md:p-6">
+          <h2 className="mb-4 text-xl font-black text-blue-950">Mida soovid teha?</h2>
+          <div className="grid gap-3">
+            <button onClick={() => setView('events')} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-blue-200 hover:bg-blue-50"><span><b>Vaadata sündmusi</b><span className="block text-sm text-slate-500">Kontserdid ja kogukonnaüritused</span></span><span aria-hidden="true" className="text-blue-700">→</span></button>
+            <button onClick={() => setView('availability')} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-blue-200 hover:bg-blue-50"><span><b>Broneerida ruum</b><span className="block text-sm text-slate-500">Vali ruum ja vaata vabu aegu</span></span><span aria-hidden="true" className="text-blue-700">→</span></button>
+            <button onClick={() => setView('activities')} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-blue-200 hover:bg-blue-50"><span><b>Ringid ja kollektiivid</b><span className="block text-sm text-slate-500">Tutvu kohaliku huvitegevusega</span></span><span aria-hidden="true" className="text-blue-700">→</span></button>
+            <button onClick={() => setView('houses')} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-blue-200 hover:bg-blue-50"><span><b>Rahvamajad</b><span className="block text-sm text-slate-500">Konguta ja Rannu kontaktid ning info</span></span><span aria-hidden="true" className="text-blue-700">→</span></button>
           </div>
         </div>
       </section>
       <section className="mt-12">
         <div className="mb-5 flex items-end justify-between gap-3">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">Tulekul</p>
-            <h2 className="mt-2 text-3xl font-black text-slate-950">Lähimad sündmused</h2>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">Tulekul</p>
+            <h2 className="mt-2 text-2xl font-black text-blue-950 md:text-3xl">Lähimad sündmused</h2>
           </div>
           <button onClick={() => setView('events')} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-200">Vaata kõiki</button>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          {upcoming.map((event) => <EventCard key={event.id} event={event} compact onDetails={openEventDetails} />)}
+          {upcoming.length ? upcoming.map((event) => <EventCard key={event.id} event={event} compact onDetails={openEventDetails} />) : <p className="rounded-xl bg-white p-5 text-slate-600 ring-1 ring-slate-200 md:col-span-3">Uusi avalikke sündmusi pole veel lisatud.</p>}
         </div>
       </section>
     </Page>
@@ -568,8 +571,8 @@ function Pill({ children }) {
 function EventCard({ event, compact = false, onDetails }) {
   const badge = dateBadge(event.dateISO)
   return (
-    <article className="overflow-hidden rounded-[1.5rem] bg-white shadow-sm ring-1 ring-slate-200">
-      <div className="h-24 bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 p-4">
+    <article className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="h-24 bg-gradient-to-br from-blue-100 via-blue-50 to-slate-50 p-4">
         <div className="flex items-start justify-between">
           <div className="rounded-2xl bg-white/85 px-4 py-3 text-center shadow-sm ring-1 ring-white">
             <p className="text-xl font-black text-slate-950">{badge.day}</p>
@@ -583,7 +586,7 @@ function EventCard({ event, compact = false, onDetails }) {
         <h3 className="text-xl font-black leading-tight text-slate-950">{getPublicTitle(event)}</h3>
         <p className="mt-2 text-sm font-bold text-slate-500">{event.weekday} · {event.startTime}–{event.endTime}</p>
         {!compact && <p className="mt-3 text-sm leading-6 text-slate-600">{event.description}</p>}
-        <button onClick={() => onDetails?.(event)} className="mt-5 rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Vaata lähemalt</button>
+        <button onClick={() => onDetails?.(event)} className="mt-5 rounded-xl bg-blue-700 px-4 py-2 text-sm font-black text-white hover:bg-blue-800">Vaata lähemalt</button>
       </div>
     </article>
   )
@@ -670,7 +673,7 @@ function EventDetailView({ event, setView, setSelectedRoomId }) {
             <p><b>Osalemine:</b> {event.price || 'Täpsustamisel'}</p>
             <p><b>Registreerimine:</b> {event.registration ? 'vajalik' : 'ei ole vajalik'}</p>
           </div>
-          {event.registration && <button className="mt-6 w-full rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800">Registreeri / küsi lisa</button>}
+          {event.registration && <button className="mt-6 w-full rounded-2xl bg-blue-700 px-5 py-3 text-sm font-black text-white hover:bg-blue-800">Registreeri / küsi lisa</button>}
           {canBookRoom && <button onClick={() => { setSelectedRoomId(event.roomId); setView('roomDetail') }} className="mt-3 w-full rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">Vaata selle ruumi kalendrit</button>}
         </aside>
       </section>
@@ -684,7 +687,7 @@ function RoomCard({ room, onOpen, content }) {
     <article className="overflow-hidden rounded-[1.5rem] bg-white shadow-sm ring-1 ring-slate-200">
       {content?.imageUrl ? <img src={content.imageUrl} alt={content.imageAlt || room.name} loading="lazy" className="h-40 w-full object-cover" /> : <div className="flex h-40 items-center justify-center bg-gradient-to-br from-emerald-100 via-sky-50 to-amber-50 text-sm font-black text-slate-500">Foto lisamata</div>}
       <div className="p-5">
-        <p className="text-xs font-black uppercase tracking-wide text-emerald-700">{room.house}</p>
+        <p className="text-xs font-black uppercase tracking-wide text-blue-700">{room.house}</p>
         <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{room.name}</h3>
         <p className="mt-2 text-sm leading-6 text-slate-600">{content?.description || room.description}</p>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -692,7 +695,7 @@ function RoomCard({ room, onOpen, content }) {
           <Pill>{formatEuro(room.hourlyRate)} / h</Pill>
           <Pill>min {room.minimumHours} h</Pill>
         </div>
-        <button onClick={onOpen} className="mt-5 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800">Vaata ja broneeri</button>
+        <button onClick={onOpen} className="mt-5 w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">Vaata ja broneeri</button>
       </div>
     </article>
   )
@@ -766,12 +769,12 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
         <div>
           <div className="mb-4 flex flex-wrap gap-2">
             {rentalRooms.map((item) => (
-              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate(todayISO()) }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
+              <button key={item.id} onClick={() => { setSelectedRoomId(item.id); setSelectedDate(todayISO()) }} className={cx('rounded-full px-4 py-2 text-sm font-black ring-1', item.id === room.id ? 'bg-blue-700 text-white ring-blue-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50')}>{item.name}</button>
             ))}
           </div>
           <SectionHeader eyebrow={room.house} title={room.name} text={publicContent[`room:${room.id}`]?.description || room.description} compact />
           {publicContent[`room:${room.id}`]?.imageUrl && <img src={publicContent[`room:${room.id}`].imageUrl} alt={publicContent[`room:${room.id}`].imageAlt || room.name} className="mb-5 max-h-80 w-full rounded-2xl object-cover" />}
-          {publicContent[`room:${room.id}`]?.linkUrl && <a href={publicContent[`room:${room.id}`].linkUrl} target="_blank" rel="noopener noreferrer" className="mb-5 inline-block font-bold text-emerald-800 underline">Lisateave ruumi kohta ↗</a>}
+          {publicContent[`room:${room.id}`]?.linkUrl && <a href={publicContent[`room:${room.id}`].linkUrl} target="_blank" rel="noopener noreferrer" className="mb-5 inline-block font-bold text-blue-800 underline">Lisateave ruumi kohta ↗</a>}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200"><p className="text-xs font-black uppercase text-slate-500">Mahutavus</p><p className="mt-1 text-xl font-black">{room.capacity} inimest</p></div>
             <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200"><p className="text-xs font-black uppercase text-slate-500">Hind</p><p className="mt-1 text-xl font-black">{formatEuro(room.hourlyRate)} / h</p></div>
@@ -802,7 +805,7 @@ function RoomDetailView({ selectedRoomId, setSelectedRoomId, events, activities,
             {availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on esialgu vaba. Ruum hoitakse puhvrit arvestades kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}
             {availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Seda aega ei saa valida.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}
             {availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}
-            <button disabled={!canContinue} onClick={continueBooking} className="mt-5 w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka broneeringuga</button>
+            <button disabled={!canContinue} onClick={continueBooking} className="mt-5 w-full rounded-xl bg-blue-700 px-5 py-3 text-sm font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka broneeringuga</button>
           </div>
         </aside>
       </section>
@@ -991,12 +994,12 @@ function Field({ label, required, children }) {
 const inputClass = 'w-full rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500'
 
 function BookingStepRoom({ form, setForm, availability, room, events, activities, roomDayIndex, onNext, canNext }) {
-  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} roomDayIndex={roomDayIndex} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
+  return <div><h2 className="text-2xl font-black">1. Vali ruum ja aeg</h2><p className="mt-2 text-sm leading-6 text-slate-600">Broneeringule lisatakse automaatselt ruumi puhver: {room.bufferBeforeMinutes} min enne ja {room.bufferAfterMinutes} min pärast.</p><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Ruum" required><select className={inputClass} value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>{rentalRooms.map((room) => <option key={room.id} value={room.id}>{room.house} · {room.name}</option>)}</select></Field><Field label="Kuupäev" required><input type="date" min={todayISO()} className={inputClass} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field><Field label="Algusaeg" required><input type="time" className={inputClass} value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></Field><Field label="Lõpuaeg" required><input type="time" className={inputClass} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></Field></div><div className="mt-5"><AvailabilityPanel events={events} activities={activities} roomId={form.roomId} dateISO={form.date} roomDayIndex={roomDayIndex} /></div>{availability.status === 'free' && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">Valitud aeg on kalendri ja puhvri põhjal esialgu vaba. Ruum hoitakse arvestuslikult kinni {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)}.</div>}{availability.status === 'busy' && <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-100"><b>Valitud aeg ei ole saadaval.</b><p className="mt-1">Puhvriga aeg {minutesToTime(availability.reservedStart)}–{minutesToTime(availability.reservedEnd)} kattub olemasoleva kasutusega.</p></div>}{availability.status === 'invalid' && <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-900 ring-1 ring-amber-100">Kuupäev ei tohi olla minevikus ja lõpuaeg peab olema algusajast hilisem.</div>}<div className="mt-5 flex justify-end"><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300">Jätka</button></div></div>
 }
 
 function BookingStepEvent({ form, setForm, onBack, onNext }) {
   const canNext = form.eventType && form.participants
-  return <div><h2 className="text-2xl font-black">2. Sündmuse info</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Sündmuse liik" required><select className={inputClass} value={form.eventType} onChange={(e) => setForm({ ...form, eventType: e.target.value })}><option value="">Vali liik</option>{EVENT_TYPE_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Osalejate arv" required><input className={inputClass} value={form.participants} onChange={(e) => setForm({ ...form, participants: e.target.value })} placeholder="nt 40" /></Field><label className="md:col-span-2 flex items-start gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.publicEvent} onChange={(e) => setForm({ ...form, publicEvent: e.target.checked })} className="mt-1" /><span><b>Soovin, et sündmus oleks avalikus kalendris detailidega nähtav.</b><span className="block text-sm text-slate-600">Kui mitte, kuvatakse kasutuskalendris neutraalne tekst, näiteks “Ruum broneeritud”.</span></span></label><Field label="Lisainfo"><textarea className={`${inputClass} min-h-[110px] md:col-span-2`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Kirjelda lisasoove, tehnilisi vajadusi või muid olulisi asjaolusid." /></Field></div><div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Jätka</button></div></div>
+  return <div><h2 className="text-2xl font-black">2. Sündmuse info</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Sündmuse liik" required><select className={inputClass} value={form.eventType} onChange={(e) => setForm({ ...form, eventType: e.target.value })}><option value="">Vali liik</option>{EVENT_TYPE_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Osalejate arv" required><input className={inputClass} value={form.participants} onChange={(e) => setForm({ ...form, participants: e.target.value })} placeholder="nt 40" /></Field><label className="md:col-span-2 flex items-start gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.publicEvent} onChange={(e) => setForm({ ...form, publicEvent: e.target.checked })} className="mt-1" /><span><b>Soovin, et sündmus oleks avalikus kalendris detailidega nähtav.</b><span className="block text-sm text-slate-600">Kui mitte, kuvatakse kasutuskalendris neutraalne tekst, näiteks “Ruum broneeritud”.</span></span></label><Field label="Lisainfo"><textarea className={`${inputClass} min-h-[110px] md:col-span-2`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Kirjelda lisasoove, tehnilisi vajadusi või muid olulisi asjaolusid." /></Field></div><div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canNext} onClick={onNext} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Jätka</button></div></div>
 }
 
 function BookingStepServices({ form, room, toggleService, onBack, onNext }) {
@@ -1016,34 +1019,34 @@ function BookingStepServices({ form, room, toggleService, onBack, onNext }) {
         </div>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {rentalServices.map((service) => <label key={service.id} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 hover:bg-slate-50"><input type="checkbox" checked={form.services.includes(service.id)} onChange={() => toggleService(service.id)} className="mt-1" /><span><b>{service.label}</b><span className="block text-sm text-slate-600">{service.description}</span><span className="mt-2 block text-sm font-black text-emerald-700">{service.pricing === 'hourly' ? `${formatEuro(service.price)} / h` : formatEuro(service.price)}</span></span></label>)}
+        {rentalServices.map((service) => <label key={service.id} className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 hover:bg-slate-50"><input type="checkbox" checked={form.services.includes(service.id)} onChange={() => toggleService(service.id)} className="mt-1" /><span><b>{service.label}</b><span className="block text-sm text-slate-600">{service.description}</span><span className="mt-2 block text-sm font-black text-blue-700">{service.pricing === 'hourly' ? `${formatEuro(service.price)} / h` : formatEuro(service.price)}</span></span></label>)}
       </div>
-      <div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button onClick={onNext} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Jätka</button></div>
+      <div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button onClick={onNext} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-black text-white">Jätka</button></div>
     </div>
   )
 }
 
 function BookingStepContact({ sending, form, setForm, onBack, onSubmit, submitMessage }) {
   const canSubmit = !sending && form.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) && form.phone.trim() && form.accepted
-  return <div><h2 className="text-2xl font-black">4. Kontakt, tingimused ja saatmine</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field><Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Telefon" required><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Allkirjastamise viis" required><select className={inputClass}><option>Allkirjastan lepingu kohapeal rahvamajas</option><option>Soovin lepingu allkirjastada digitaalselt</option></select></Field></div><details className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><summary className="cursor-pointer font-black">Ruumide kasutamise tingimused, hinnainfo ja isikuandmed</summary><p className="mt-3 text-sm leading-6 text-slate-600">Broneering jõustub pärast rahvamaja kinnitust. Hind on orienteeruv ja kinnitatakse lõplikult pärast ruumi saadavuse ning vajaduste ülevaatamist. Isikuandmeid kasutatakse broneeringu, lepingu ja arve menetlemiseks.</p></details><label className="mt-4 flex items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.accepted} onChange={(e) => setForm({ ...form, accepted: e.target.checked })} className="mt-1" /><span className="text-sm"><b>Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega. <span className="text-rose-600">*</span></b></span></label>{submitMessage && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{submitMessage}</div>}<div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canSubmit} onClick={onSubmit} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Saada broneeringusoov</button></div></div>
+  return <div><h2 className="text-2xl font-black">4. Kontakt, tingimused ja saatmine</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="Nimi" required><input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field><Field label="E-post" required><input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Telefon" required><input type="tel" className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Allkirjastamise viis" required><select className={inputClass}><option>Allkirjastan lepingu kohapeal rahvamajas</option><option>Soovin lepingu allkirjastada digitaalselt</option></select></Field></div><details className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><summary className="cursor-pointer font-black">Ruumide kasutamise tingimused, hinnainfo ja isikuandmed</summary><p className="mt-3 text-sm leading-6 text-slate-600">Broneering jõustub pärast rahvamaja kinnitust. Hind on orienteeruv ja kinnitatakse lõplikult pärast ruumi saadavuse ning vajaduste ülevaatamist. Isikuandmeid kasutatakse broneeringu, lepingu ja arve menetlemiseks.</p></details><label className="mt-4 flex items-start gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200"><input type="checkbox" checked={form.accepted} onChange={(e) => setForm({ ...form, accepted: e.target.checked })} className="mt-1" /><span className="text-sm"><b>Olen tutvunud ruumi kasutamise tingimuste, hinnainfo ja isikuandmete töötlemise põhimõtetega ning nõustun nendega. <span className="text-rose-600">*</span></b></span></label>{submitMessage && <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900 ring-1 ring-emerald-100">{submitMessage}</div>}<div className="mt-5 flex justify-between"><button onClick={onBack} className="rounded-xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">Tagasi</button><button disabled={!canSubmit} onClick={onSubmit} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-black text-white disabled:bg-slate-300">Saada broneeringusoov</button></div></div>
 }
 
 function ActivitiesView({ collectives, publicContent }) {
   return <Page><SectionHeader eyebrow="Ringid ja tegevused" title="Leia endale sobiv tegevus" text="Tutvu Konguta ja Rannu rahvamaja huvitegevusega. Enne kohale tulekut kontrolli aega korraldajalt." />
     <div className="space-y-8">{activeHouses.map((house) => <section key={house.id} aria-labelledby={`activities-${house.id}`}>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id={`activities-${house.id}`} className="text-2xl font-black">{house.name}</h2>{house.id === 'rannu' && <p className="mt-1 text-sm text-slate-600">Ametlik kava: hooaeg 2026/2027.</p>}</div><a href={house.activitiesUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-800 underline">Kontrolli ametlikku ajakava ↗</a></div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{publicActivities.filter((item) => item.houseId === house.id && !item.collectiveName).map((item) => <article key={`${house.id}-${item.title}`} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-3 font-bold text-slate-800">{item.time}</p><p className="mt-2 text-sm text-slate-600">{item.place}</p><p className="mt-2 text-sm text-slate-600">Juhendaja: {item.leader}</p><a href={`mailto:${house.email}?subject=${encodeURIComponent(item.title)}`} className="mt-4 inline-block rounded-xl bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-800 ring-1 ring-emerald-100">Küsi lisateavet</a></article>)}</div>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id={`activities-${house.id}`} className="text-2xl font-black">{house.name}</h2>{house.id === 'rannu' && <p className="mt-1 text-sm text-slate-600">Ametlik kava: hooaeg 2026/2027.</p>}</div><a href={house.activitiesUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-800 underline">Kontrolli ametlikku ajakava ↗</a></div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{publicActivities.filter((item) => item.houseId === house.id && !item.collectiveName).map((item) => <article key={`${house.id}-${item.title}`} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-3 font-bold text-slate-800">{item.time}</p><p className="mt-2 text-sm text-slate-600">{item.place}</p><p className="mt-2 text-sm text-slate-600">Juhendaja: {item.leader}</p><a href={`mailto:${house.email}?subject=${encodeURIComponent(item.title)}`} className="mt-4 inline-block rounded-xl bg-emerald-50 px-4 py-2 text-sm font-black text-blue-800 ring-1 ring-emerald-100">Küsi lisateavet</a></article>)}</div>
     </section>)}</div>
     <section className="mt-10"><h2 className="text-2xl font-black">Kultuurikollektiivid</h2><p className="mt-2 text-sm text-slate-600">Kollektiivide ja juhendajate andmeid saab juhataja või administraator töölaual uuendada.</p><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{collectives.map((item) => {
       const schedule = publicActivities.find((activity) => activity.collectiveName === item.name && activeHouses.find((house) => house.id === activity.houseId)?.name === item.house)
       const content = publicContent[`collective:${item.id}`]
-      return <article key={item.id || `${item.house}-${item.name}`} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">{content?.imageUrl && <img src={content.imageUrl} alt={content.imageAlt || item.name} loading="lazy" className="mb-4 h-44 w-full rounded-xl object-cover" />}<h3 className="text-lg font-black">{item.name}</h3><p className="mt-2 text-sm text-slate-600">{item.house}</p>{item.instructor && <p className="mt-3 text-sm"><b>Juhendaja:</b> {item.instructor}</p>}{(content?.description || item.description) && <p className="mt-3 text-sm leading-6 text-slate-600">{content?.description || item.description}</p>}{schedule && <p className="mt-3 text-sm text-slate-600"><b>Tegevusaeg:</b> {schedule.time}{schedule.place !== item.house && ` · ${schedule.place}`}</p>}{item.contactEmail && <a href={`mailto:${item.contactEmail}`} className="mt-3 block break-all text-sm font-bold text-emerald-800 underline">{item.contactEmail}</a>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm font-bold text-emerald-800 underline">Ametlik teave ↗</a>}{content?.linkUrl && <a href={content.linkUrl} target="_blank" rel="noopener noreferrer" className="mt-3 block text-sm font-bold text-emerald-800 underline">Kollektiivi link ↗</a>}</article>
+      return <article key={item.id || `${item.house}-${item.name}`} className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">{content?.imageUrl && <img src={content.imageUrl} alt={content.imageAlt || item.name} loading="lazy" className="mb-4 h-44 w-full rounded-xl object-cover" />}<h3 className="text-lg font-black">{item.name}</h3><p className="mt-2 text-sm text-slate-600">{item.house}</p>{item.instructor && <p className="mt-3 text-sm"><b>Juhendaja:</b> {item.instructor}</p>}{(content?.description || item.description) && <p className="mt-3 text-sm leading-6 text-slate-600">{content?.description || item.description}</p>}{schedule && <p className="mt-3 text-sm text-slate-600"><b>Tegevusaeg:</b> {schedule.time}{schedule.place !== item.house && ` · ${schedule.place}`}</p>}{item.contactEmail && <a href={`mailto:${item.contactEmail}`} className="mt-3 block break-all text-sm font-bold text-blue-800 underline">{item.contactEmail}</a>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm font-bold text-blue-800 underline">Ametlik teave ↗</a>}{content?.linkUrl && <a href={content.linkUrl} target="_blank" rel="noopener noreferrer" className="mt-3 block text-sm font-bold text-blue-800 underline">Kollektiivi link ↗</a>}</article>
     })}</div></section>
     <p className="mt-8 text-sm text-slate-600">Ajakava on informatiivne. Huvitegevuse kellaajad ei tähenda automaatselt kinnitatud ruumibroneeringuid.</p></Page>
 }
 
 function HousesView({ setView, publicContent }) {
-  return <Page><SectionHeader eyebrow="Rahvamajad" title="Rahvamajad" text="Leia oma kodukandi rahvamaja ning tutvu selle tegevuste ja ruumidega." /><div className="grid gap-5 md:grid-cols-2">{activeHouses.map((house) => { const content = publicContent[`house:${house.id}`]; return <article key={house.id} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">{content?.imageUrl && <img src={content.imageUrl} alt={content.imageAlt || house.name} className="mb-5 h-48 w-full rounded-xl object-cover" loading="lazy" />}<h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{content?.description || house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div><p className="mt-5 text-sm text-slate-600">{house.contactPerson} · <a className="font-bold text-emerald-800 underline" href={`tel:${house.phone}`}>{house.phone}</a></p><div className="mt-4 flex flex-wrap gap-3 text-sm font-bold"><button onClick={() => setView('activities')} className="text-emerald-800 underline">Vaata ringe ja kollektiive →</button><a href={content?.linkUrl || house.website} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">Rahvamaja tutvustus ↗</a></div></article> })}</div></Page>
+  return <Page><SectionHeader eyebrow="Rahvamajad" title="Rahvamajad" text="Leia oma kodukandi rahvamaja ning tutvu selle tegevuste ja ruumidega." /><div className="grid gap-5 md:grid-cols-2">{activeHouses.map((house) => { const content = publicContent[`house:${house.id}`]; return <article key={house.id} className="rounded-[1.7rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">{content?.imageUrl && <img src={content.imageUrl} alt={content.imageAlt || house.name} className="mb-5 h-48 w-full rounded-xl object-cover" loading="lazy" />}<h3 className="text-2xl font-black">{house.name}</h3><p className="mt-2 text-sm font-bold text-slate-500">📍 {house.location}</p><p className="mt-4 leading-7 text-slate-600">{content?.description || house.description}</p><div className="mt-5 flex flex-wrap gap-2">{house.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</div><p className="mt-5 text-sm text-slate-600">{house.contactPerson} · <a className="font-bold text-blue-800 underline" href={`tel:${house.phone}`}>{house.phone}</a></p><div className="mt-4 flex flex-wrap gap-3 text-sm font-bold"><button onClick={() => setView('activities')} className="text-blue-800 underline">Vaata ringe ja kollektiive →</button><a href={content?.linkUrl || house.website} target="_blank" rel="noopener noreferrer" className="text-blue-800 underline">Rahvamaja tutvustus ↗</a></div></article> })}</div></Page>
 }
 
 function ContactView() {
@@ -1056,10 +1059,10 @@ function ContactView() {
             <h3 className="text-lg font-black">{house.name}</h3>
             <p className="mt-3 text-slate-600">{house.location}</p>
             <p className="mt-2 text-sm text-slate-600">{house.contactPerson}</p>
-            <a href={`mailto:${house.email}`} className="mt-2 block break-all text-sm font-bold text-emerald-800 underline">{house.email}</a>
-            <a href={`tel:${house.phone}`} className="mt-2 block text-sm font-bold text-emerald-800 underline">{house.phone}</a>
+            <a href={`mailto:${house.email}`} className="mt-2 block break-all text-sm font-bold text-blue-800 underline">{house.email}</a>
+            <a href={`tel:${house.phone}`} className="mt-2 block text-sm font-bold text-blue-800 underline">{house.phone}</a>
             <div className="mt-5 flex flex-wrap gap-2">
-              {house.phone && <a href={`tel:${house.phone}`} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">Helista</a>}
+              {house.phone && <a href={`tel:${house.phone}`} className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white">Helista</a>}
               <a href={`mailto:${house.email || bookingSettings.defaultEmail}?subject=${encodeURIComponent(house.name)}`} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800">Kirjuta</a>
             </div>
           </article>
@@ -2061,9 +2064,9 @@ function AdminView({ setView, selectedRole, events, activities, roomDayIndex, bo
         <SectionHeader eyebrow="Töötaja töölaud" title={role?.label || 'Töölaud'} text="Vali tegevus allpool. Ootel broneeringu kinnitamisel ilmub see avalikku ruumikalendrisse." />
         <button onClick={refreshData} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-200">Värskenda andmeid</button>
       </div>
-      <nav aria-label="Töölaua jaotised" className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <nav aria-label="Töölaua jaotised" className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {sections.map((item) => (
-          <button key={item.id} type="button" onClick={() => openSection(item.id)} aria-current={section === item.id ? 'page' : undefined} className={cx('rounded-2xl p-4 text-left ring-1 transition-colors', section === item.id ? 'bg-emerald-700 text-white ring-emerald-700' : 'bg-white text-slate-800 ring-slate-200 hover:bg-emerald-50')}>
+          <button key={item.id} type="button" onClick={() => openSection(item.id)} aria-current={section === item.id ? 'page' : undefined} className={cx('rounded-xl p-4 text-left ring-1 transition-colors', section === item.id ? 'bg-blue-900 text-white ring-blue-900' : 'bg-white text-slate-800 ring-slate-200 hover:bg-blue-50')}>
             <span className="block font-black">{item.label}</span>
             <span className={cx('mt-1 block text-sm', section === item.id ? 'text-emerald-50' : 'text-slate-500')}>{item.detail}</span>
           </button>
@@ -2246,7 +2249,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8faf7] font-sans text-slate-900">
+    <div className="min-h-screen bg-gray-50 font-sans text-slate-900">
       <Header view={view} setView={setView} isAdminUnlocked={isAdminUnlocked} staffRole={staffRole} />
       {isAdminUnlocked && <div className="mx-auto flex max-w-7xl items-center justify-end gap-3 px-4 py-2 text-sm">
         <span>{staffUser?.name} · {roles.find(role => role.id === staffRole)?.label}</span>

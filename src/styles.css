@@ -9,6 +9,8 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  background: #f9fafb;
+  color: #1f2937;
 }
 
 button,
@@ -21,7 +23,7 @@ textarea {
 
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid #047857;
+  outline: 3px solid #1d4ed8;
   outline-offset: 3px;
 }
 
