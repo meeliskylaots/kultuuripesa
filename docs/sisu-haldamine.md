@@ -12,3 +12,11 @@ Salvestamisel luuakse Google Sheeti vahekaart **Avalik sisu**. Põhikanded ja br
 4. Kontrolli teisest brauserist avalikku vaadet ning tee proovibroneering eri ruumidele; kontrolli kinnitamist ja lehe värskendamist.
 
 Pildifaili üleslaadimist see versioon ei sisalda. Pilt peab juba asuma veebis avaliku otseviitega HTTPS-aadressil; Google Drive'i jagamislink ei pruugi töötada pildiaadressina. Ära lisa vormi salajasi paroole ega privaatseid faile.
+
+## Uue HTML-kavandi ühendamine
+
+Apps Scripti avalik `daySchedule` toiming võtab `date=AAAA-KK-PP` ja `roomId` (näiteks `konguta-saal`) ning vastab välja `entries` kaudu. Igal kirjel on `roomId`, `startTime`, `endTime`, `reservedStartTime`, `reservedEndTime` ja `status`. `pending` hõivab samuti ruumi. Server ei väljasta kliendi nime ega sündmuse kirjeldust.
+
+Uue HTML-vormi `submitBooking()` peab saatma POST-päringu toiminguga `submitSiteBooking` järgmiste väljadega: `roomId`, `date`, `startTime`, `endTime`, `clientName`, `clientEmail`, `clientPhone`, `eventDescription`, `clientType`. Tulemust tuleb kontrollida sama `operationStatus` päringuga, mida kasutab Reacti rakendus. Nimi, e-post ja telefon on kohustuslikud; senisele HTML-kavandile tuleb e-posti ja telefoni väljad lisada. Ära kuva teadet „Päring saadetud” enne serveri kinnitust. Kavandi `suur` ja `vaike` ei ole üheselt määratud ruumi ID-d: kasutada tuleb `ROOM_CONFIG` väärtusi. Konguta väikese saali ID-d praeguses ruumide loendis ei ole.
+
+Juhendaja prooviaja muutmise päring kasutab olemasolevat `requestReschedule` toimingut. See nõuab isiklikku seansitokenit, muudetava proovi `bookingId` väärtust ning uut kuupäeva, ruumi ID-d ja kellaaegu. Kinnituse teeb juhataja või administraator `updateStatus` toiminguga. Näidisfaili ainult kuupäeva ja vaba tekstiga vorm ei anna selleks piisavalt andmeid. Näidisfailis kõvakodeeritud `admin` ja `juhendaja` paroole ei tohi avalikule veebilehele lisada.

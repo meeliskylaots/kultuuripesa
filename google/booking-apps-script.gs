@@ -62,6 +62,45 @@ function listPublicContent_() {
   })) }
 }
 
+/** Avalik päevavaade uue koduka kalendri jaoks. Kliendiandmeid ei tagastata. */
+function publicDaySchedule_(date, roomId) {
+  const requestedDate = String(date || '')
+  const requestedRoom = String(roomId || '')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ||
+      Number.isNaN(new Date(requestedDate + 'T12:00:00Z').getTime()) ||
+      new Date(requestedDate + 'T12:00:00Z').toISOString().slice(0, 10) !== requestedDate) {
+    throw new Error('Kuupäev ei sobi.')
+  }
+  if (requestedRoom && !Object.prototype.hasOwnProperty.call(ROOM_CONFIG, requestedRoom)) throw new Error('Ruum ei sobi.')
+  const entries = listBookings_().usages
+    .filter(item => item.date === requestedDate && (!requestedRoom || item.roomId === requestedRoom))
+    .map(item => ({
+      roomId: item.roomId, roomName: item.roomName,
+      startTime: item.startTime, endTime: item.endTime,
+      reservedStartTime: item.reservedStartTime, reservedEndTime: item.reservedEndTime,
+      status: item.status === 'kinnitatud' ? 'confirmed' : 'pending',
+      title: item.status === 'kinnitatud' ? 'Ruum kasutuses' : 'Aeg on menetlemisel'
+    }))
+  return { ok: true, date: requestedDate, entries }
+}
+
+/** Uue lihtsa broneerimisvormi väljad teisendatakse senisesse broneeringuvoogu. */
+function submitSiteBooking_(payload) {
+  const name = String(payload.clientName || '').trim()
+  const email = normalizeEmail_(payload.clientEmail)
+  const phone = String(payload.clientPhone || '').trim()
+  if (!name || !email || !phone) throw new Error('Sisesta nimi, e-post ja telefon.')
+  const description = String(payload.eventDescription || '').trim()
+  if (description.length > 1500) throw new Error('Sündmuse kirjeldus on liiga pikk.')
+  return createBooking_({
+    action: 'createBooking', roomId: String(payload.roomId || ''),
+    date: String(payload.date || ''), startTime: String(payload.startTime || ''), endTime: String(payload.endTime || ''),
+    eventType: 'Eraüritus', name, email, phone,
+    notes: `${payload.clientType === 'commercial' ? 'Ärikasutus' : 'Kogukondlik kasutus'}: ${description}`,
+    publicEvent: false, publicTitle: 'Ruum broneeritud', displayMode: 'neutral'
+  })
+}
+
 function savePublicContent_(payload) {
   requireManager_(payload.sessionToken)
   const type = String(payload.type || '')
@@ -941,6 +980,7 @@ function doGet(e) {
     else if (action === 'listCollectives') data = listCollectives_(params.session)
     else if (action === 'listPublicCollectives') data = listPublicCollectives_()
     else if (action === 'listPublicContent') data = listPublicContent_()
+    else if (action === 'daySchedule') data = publicDaySchedule_(params.date, params.roomId)
     else if (action === 'listCollectiveChanges') data = listCollectiveChanges_(params.session)
     else if (action === 'operationStatus') data = operationStatus_(params.requestId, params.session)
     else data = { ok: true, message: 'Kultuuripesa Apps Script töötab.' }
@@ -995,8 +1035,12 @@ function doPost(e) {
       result = { ok: true, userId: user?.id || '' }
     } else if (payload.action === 'bootstrapUser') {
       result = bootstrapUser_(payload)
-    } else {
+    } else if (payload.action === 'submitSiteBooking') {
+      result = submitSiteBooking_(payload)
+    } else if (!payload.action || payload.action === 'createBooking') {
       result = createBooking_(payload)
+    } else {
+      throw new Error('Tundmatu toiming.')
     }
     return jsonResponse_(operationResult_(payload, result))
   } catch (error) {
@@ -1058,8 +1102,9 @@ function testSetup() {
 }
 
 function createBooking_(payload) {
-  validatePayload_(payload)
   validateRoomTime_(payload)
+  // Avalik vorm saadab roomId. Maja ja ruumi nime määrab server ise.
+  validatePayload_(payload)
   assertRoomAvailable_(payload)
   payload.status = 'ootel'
 
