@@ -18,15 +18,15 @@ const ROOM_CONFIG = {
     "houseId": "konguta",
     "house": "Konguta rahvamaja",
     "name": "Saal",
-    "bufferBeforeMinutes": 60,
+    "bufferBeforeMinutes": 0,
     "bufferAfterMinutes": 60
   },
   "konguta-valiala": {
     "houseId": "konguta",
     "house": "Konguta rahvamaja",
     "name": "Väliala / laululava ümbrus",
-    "bufferBeforeMinutes": 120,
-    "bufferAfterMinutes": 120
+    "bufferBeforeMinutes": 0,
+    "bufferAfterMinutes": 60
   }
 }
 // END GENERATED ROOM CONFIG
@@ -63,6 +63,13 @@ function listPublicContent_() {
 }
 
 /** Avalik päevavaade uue koduka kalendri jaoks. Kliendiandmeid ei tagastata. */
+function addMinutesToTime_(time, amount) {
+  const match = String(time || '').match(/^(\d{2}):(\d{2})$/)
+  if (!match) return String(time || '')
+  const total = Math.min(1440, Number(match[1]) * 60 + Number(match[2]) + Number(amount || 0))
+  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0')
+}
+
 function publicDaySchedule_(date, roomId) {
   const requestedDate = String(date || '')
   const requestedRoom = String(roomId || '')
@@ -74,13 +81,20 @@ function publicDaySchedule_(date, roomId) {
   if (requestedRoom && !Object.prototype.hasOwnProperty.call(ROOM_CONFIG, requestedRoom)) throw new Error('Ruum ei sobi.')
   const entries = listBookings_().usages
     .filter(item => item.date === requestedDate && (!requestedRoom || item.roomId === requestedRoom))
-    .map(item => ({
-      roomId: item.roomId, roomName: item.roomName,
-      startTime: item.startTime, endTime: item.endTime,
-      reservedStartTime: item.reservedStartTime, reservedEndTime: item.reservedEndTime,
-      status: item.status === 'kinnitatud' ? 'confirmed' : 'pending',
-      title: item.status === 'kinnitatud' ? 'Ruum kasutuses' : 'Aeg on menetlemisel'
-    }))
+    .map(item => {
+      const isKonguta = String(item.roomId || '').startsWith('konguta-')
+      const showPublicTitle = isKonguta && item.publicEvent && String(item.publicTitle || '').trim()
+      return {
+        roomId: item.roomId, roomName: item.roomName,
+        startTime: item.startTime, endTime: item.endTime,
+        reservedStartTime: isKonguta ? item.startTime : item.reservedStartTime,
+        reservedEndTime: isKonguta ? addMinutesToTime_(item.endTime, 60) : item.reservedEndTime,
+        status: item.status === 'kinnitatud' ? 'confirmed' : 'pending',
+        title: item.status === 'kinnitatud'
+          ? (showPublicTitle ? String(item.publicTitle).trim() : 'Ruum kasutuses')
+          : 'Aeg on menetlemisel'
+      }
+    })
   return { ok: true, date: requestedDate, entries }
 }
 
@@ -1078,10 +1092,21 @@ function validateRoomTime_(payload) {
 
 function assertRoomAvailable_(payload, excludeId) {
   const bookings = listBookings_().usages
-  const conflict = bookings.some((item) => item.roomId === payload.roomId && item.date === payload.date &&
-    !(Array.isArray(excludeId) ? excludeId : [excludeId]).map(String).includes(String(item.bookingId)) &&
-    (item.reservedStartTime || item.startTime) < payload.reservedEndTime &&
-    (item.reservedEndTime || item.endTime) > payload.reservedStartTime)
+  const excludedIds = (Array.isArray(excludeId) ? excludeId : [excludeId]).map(String)
+  const isKonguta = String(payload.roomId || '').startsWith('konguta-')
+  const toMinutes = (time) => Number(String(time || '').slice(0, 2)) * 60 + Number(String(time || '').slice(3, 5))
+  const conflict = bookings.some((item) => {
+    if (item.roomId !== payload.roomId || item.date !== payload.date || excludedIds.includes(String(item.bookingId))) return false
+    if (isKonguta) {
+      const proposedStart = toMinutes(payload.startTime)
+      const proposedEnd = toMinutes(payload.endTime)
+      const existingStart = toMinutes(item.startTime)
+      const existingEnd = toMinutes(item.endTime)
+      return proposedStart < existingEnd + 60 && proposedEnd + 60 > existingStart
+    }
+    return (item.reservedStartTime || item.startTime) < payload.reservedEndTime &&
+      (item.reservedEndTime || item.endTime) > payload.reservedStartTime
+  })
   if (conflict) throw new Error('Valitud ruum on sellel ajal juba kasutuses või ootel. Vali teine aeg.')
 }
 
